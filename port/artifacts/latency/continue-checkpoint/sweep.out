@@ -1,0 +1,6 @@
+users=8 active_peak=8 completed=93 failures=0 unfinished=0 TTFA p50=0.222s p95=0.501s playback_stall_p95=0.304s turns/s=0.69
+users=16 active_peak=15 completed=184 failures=0 unfinished=0 TTFA p50=0.302s p95=0.584s playback_stall_p95=0.777s turns/s=1.39
+users=24 Locust exit=1; retaining failure results
+users=24 active_peak=18 completed=269 failures=1 unfinished=1 TTFA p50=0.430s p95=0.670s playback_stall_p95=1.620s turns/s=1.93
+users=30 Locust exit=1; retaining failure results
+users=30 active_peak=20 completed=313 failures=1 unfinished=0 TTFA p50=0.503s p95=0.811s playback_stall_p95=2.641s turns/s=2.32

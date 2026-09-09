@@ -1,0 +1,13 @@
+{
+  "description": "Observed at the first caller in each workload-v2 sweep; server truncation guard catches 2 output speech tokens for 48 input text tokens.",
+  "model": "/workspace/models/chatterbox-mtl-v3",
+  "input": "Good morning, you have reached the customer care line. What can I do for you?",
+  "language": "en",
+  "reference_audio_file": "/workspace/refvoices/en_spk1272.wav",
+  "seed": 42,
+  "stream": true,
+  "stream_format": "audio",
+  "response_format": "pcm",
+  "server_error": "generation stopped after 2 speech tokens for a 48-token input (expected at least 28); the utterance is truncated",
+  "note": "Reference file must be base64-encoded as ref_audio for an API call. No retries or alternate seeds were used to hide the failed streams."
+}

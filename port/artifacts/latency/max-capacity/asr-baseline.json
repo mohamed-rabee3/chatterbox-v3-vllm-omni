@@ -1,0 +1,23 @@
+[
+  {
+    "path": "port/artifacts/latency/compiled-smoke/en_plain.wav",
+    "language": "en",
+    "transcript": " Hello, this is the Reference Implementation speaking.",
+    "audio_s": 3.0,
+    "wall_s": 0.7427927660755813
+  },
+  {
+    "path": "port/artifacts/latency/compiled-smoke/ar_plain.wav",
+    "language": "ar",
+    "transcript": " هياك الله موئدك بكرة الساعة التاسعة صباحا",
+    "audio_s": 4.36,
+    "wall_s": 0.11028173705562949
+  },
+  {
+    "path": "port/artifacts/latency/compiled-smoke/mixed_ar_en.wav",
+    "language": "ar",
+    "transcript": " حياك الله حسابك على نتفليكس تم تجديده اليوم",
+    "audio_s": 4.84,
+    "wall_s": 0.11130032083019614
+  }
+]

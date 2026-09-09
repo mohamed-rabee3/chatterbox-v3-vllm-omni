@@ -1,0 +1,83 @@
+connectors:
+  connector_of_shared_memory:
+    name: SharedMemoryConnector
+    extra:
+      shm_threshold_bytes: 65536
+      codec_streaming: true
+      connector_get_sleep_s: 0.01
+      connector_get_max_wait_first_chunk: 3000
+      connector_get_max_wait: 300
+      codec_chunk_frames: 5
+      codec_chunk_growth: 2.0
+      codec_max_chunk_frames: 400
+      codec_pre_lookahead_frames: 3
+async_chunk: true
+stages:
+- stage_id: 0
+  dtype: float32
+  max_num_batched_tokens: 8192
+  max_num_seqs: 64
+  gpu_memory_utilization: 0.2
+  enable_chunked_prefill: false
+  enforce_eager: false
+  compilation_config:
+    mode: 3
+    cudagraph_mode: PIECEWISE
+    cudagraph_capture_sizes:
+    - 2
+    - 4
+    - 8
+    - 16
+    - 24
+    - 32
+    - 48
+    - 64
+    cudagraph_copy_inputs: true
+  trust_remote_code: true
+  enable_prefix_caching: false
+  max_model_len: 4096
+  devices: '0'
+  logits_processors:
+  - vllm_omni.model_executor.models.chatterbox_mtl_v3.sampling:ChatterboxCFGLogitsProcessor
+  output_connectors:
+    to_stage_1: connector_of_shared_memory
+  default_sampling_params:
+    max_tokens: 1000
+    temperature: 0.8
+    top_p: 1.0
+    min_p: 0.05
+    repetition_penalty: 1.0
+    extra_args:
+      cfg_role: cond
+      cfg_scale: 1.5
+  disable_hybrid_kv_cache_manager: true
+  mm_processor_cache_gb: 0
+  skip_mm_profiling: true
+- stage_id: 1
+  dtype: float32
+  max_num_batched_tokens: 32768
+  max_num_seqs: 32
+  gpu_memory_utilization: 0.4
+  enforce_eager: true
+  trust_remote_code: true
+  enable_prefix_caching: false
+  max_model_len: 4096
+  devices: '0'
+  default_sampling_params:
+    max_tokens: 1
+  input_connectors:
+    from_stage_0: connector_of_shared_memory
+  hf_overrides:
+    acoustic_cfm_timesteps: 4
+    acoustic_flow_cudagraphs: true
+    acoustic_compile_estimator: true
+    acoustic_max_batch_rows: 32
+    acoustic_estimator_dtype: float16
+    acoustic_continuation_batch_size: 2
+    acoustic_graph_cache_size: 12
+    acoustic_graph_max_codes: 75
+    acoustic_prewarm_prompt_tokens: []
+    acoustic_materialize_vocoder_weights: true
+    acoustic_vocoder_cudagraphs: true
+  disable_hybrid_kv_cache_manager: true
+  skip_mm_profiling: true

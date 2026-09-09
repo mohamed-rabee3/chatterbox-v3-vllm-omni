@@ -1,0 +1,225 @@
+{
+  "note": "Post-hoc model of completed chunk traces only; not separate load tests at each buffer setting. Changing the buffer can also change offered load when pacing playback. Failed and interrupted streams excluded from this sensitivity analysis.",
+  "runs": {
+    "u1": [
+      {
+        "buffer_s": 0,
+        "completed_playback_start_p95_s": 0.296,
+        "stall_p95_s": 0.17,
+        "turns_with_stall_over_100ms_pct": 80.0
+      },
+      {
+        "buffer_s": 0.1,
+        "completed_playback_start_p95_s": 0.396,
+        "stall_p95_s": 0.07,
+        "turns_with_stall_over_100ms_pct": 0.0
+      },
+      {
+        "buffer_s": 0.2,
+        "completed_playback_start_p95_s": 0.496,
+        "stall_p95_s": 0.0,
+        "turns_with_stall_over_100ms_pct": 0.0
+      },
+      {
+        "buffer_s": 0.3,
+        "completed_playback_start_p95_s": 0.596,
+        "stall_p95_s": 0.0,
+        "turns_with_stall_over_100ms_pct": 0.0
+      },
+      {
+        "buffer_s": 0.4,
+        "completed_playback_start_p95_s": 0.696,
+        "stall_p95_s": 0.0,
+        "turns_with_stall_over_100ms_pct": 0.0
+      },
+      {
+        "buffer_s": 0.5,
+        "completed_playback_start_p95_s": 0.796,
+        "stall_p95_s": 0.0,
+        "turns_with_stall_over_100ms_pct": 0.0
+      },
+      {
+        "buffer_s": 1.0,
+        "completed_playback_start_p95_s": 1.296,
+        "stall_p95_s": 0.0,
+        "turns_with_stall_over_100ms_pct": 0.0
+      }
+    ],
+    "u2": [
+      {
+        "buffer_s": 0,
+        "completed_playback_start_p95_s": 0.327,
+        "stall_p95_s": 0.197,
+        "turns_with_stall_over_100ms_pct": 85.19
+      },
+      {
+        "buffer_s": 0.1,
+        "completed_playback_start_p95_s": 0.427,
+        "stall_p95_s": 0.097,
+        "turns_with_stall_over_100ms_pct": 7.41
+      },
+      {
+        "buffer_s": 0.2,
+        "completed_playback_start_p95_s": 0.527,
+        "stall_p95_s": 0.003,
+        "turns_with_stall_over_100ms_pct": 0.0
+      },
+      {
+        "buffer_s": 0.3,
+        "completed_playback_start_p95_s": 0.627,
+        "stall_p95_s": 0.0,
+        "turns_with_stall_over_100ms_pct": 0.0
+      },
+      {
+        "buffer_s": 0.4,
+        "completed_playback_start_p95_s": 0.727,
+        "stall_p95_s": 0.0,
+        "turns_with_stall_over_100ms_pct": 0.0
+      },
+      {
+        "buffer_s": 0.5,
+        "completed_playback_start_p95_s": 0.827,
+        "stall_p95_s": 0.0,
+        "turns_with_stall_over_100ms_pct": 0.0
+      },
+      {
+        "buffer_s": 1.0,
+        "completed_playback_start_p95_s": 1.327,
+        "stall_p95_s": 0.0,
+        "turns_with_stall_over_100ms_pct": 0.0
+      }
+    ],
+    "u4": [
+      {
+        "buffer_s": 0,
+        "completed_playback_start_p95_s": 0.912,
+        "stall_p95_s": 0.392,
+        "turns_with_stall_over_100ms_pct": 81.25
+      },
+      {
+        "buffer_s": 0.1,
+        "completed_playback_start_p95_s": 1.012,
+        "stall_p95_s": 0.292,
+        "turns_with_stall_over_100ms_pct": 31.25
+      },
+      {
+        "buffer_s": 0.2,
+        "completed_playback_start_p95_s": 1.112,
+        "stall_p95_s": 0.192,
+        "turns_with_stall_over_100ms_pct": 12.5
+      },
+      {
+        "buffer_s": 0.3,
+        "completed_playback_start_p95_s": 1.212,
+        "stall_p95_s": 0.092,
+        "turns_with_stall_over_100ms_pct": 4.17
+      },
+      {
+        "buffer_s": 0.4,
+        "completed_playback_start_p95_s": 1.312,
+        "stall_p95_s": 0.0,
+        "turns_with_stall_over_100ms_pct": 0.0
+      },
+      {
+        "buffer_s": 0.5,
+        "completed_playback_start_p95_s": 1.412,
+        "stall_p95_s": 0.0,
+        "turns_with_stall_over_100ms_pct": 0.0
+      },
+      {
+        "buffer_s": 1.0,
+        "completed_playback_start_p95_s": 1.912,
+        "stall_p95_s": 0.0,
+        "turns_with_stall_over_100ms_pct": 0.0
+      }
+    ],
+    "u8": [
+      {
+        "buffer_s": 0,
+        "completed_playback_start_p95_s": 1.1,
+        "stall_p95_s": 1.015,
+        "turns_with_stall_over_100ms_pct": 86.02
+      },
+      {
+        "buffer_s": 0.1,
+        "completed_playback_start_p95_s": 1.2,
+        "stall_p95_s": 0.915,
+        "turns_with_stall_over_100ms_pct": 54.84
+      },
+      {
+        "buffer_s": 0.2,
+        "completed_playback_start_p95_s": 1.3,
+        "stall_p95_s": 0.815,
+        "turns_with_stall_over_100ms_pct": 47.31
+      },
+      {
+        "buffer_s": 0.3,
+        "completed_playback_start_p95_s": 1.4,
+        "stall_p95_s": 0.715,
+        "turns_with_stall_over_100ms_pct": 32.26
+      },
+      {
+        "buffer_s": 0.4,
+        "completed_playback_start_p95_s": 1.5,
+        "stall_p95_s": 0.615,
+        "turns_with_stall_over_100ms_pct": 23.66
+      },
+      {
+        "buffer_s": 0.5,
+        "completed_playback_start_p95_s": 1.6,
+        "stall_p95_s": 0.515,
+        "turns_with_stall_over_100ms_pct": 16.13
+      },
+      {
+        "buffer_s": 1.0,
+        "completed_playback_start_p95_s": 2.1,
+        "stall_p95_s": 0.029,
+        "turns_with_stall_over_100ms_pct": 4.3
+      }
+    ],
+    "warm-repeat/u4": [
+      {
+        "buffer_s": 0,
+        "completed_playback_start_p95_s": 0.555,
+        "stall_p95_s": 0.451,
+        "turns_with_stall_over_100ms_pct": 70.77
+      },
+      {
+        "buffer_s": 0.1,
+        "completed_playback_start_p95_s": 0.655,
+        "stall_p95_s": 0.351,
+        "turns_with_stall_over_100ms_pct": 24.62
+      },
+      {
+        "buffer_s": 0.2,
+        "completed_playback_start_p95_s": 0.755,
+        "stall_p95_s": 0.251,
+        "turns_with_stall_over_100ms_pct": 9.23
+      },
+      {
+        "buffer_s": 0.3,
+        "completed_playback_start_p95_s": 0.855,
+        "stall_p95_s": 0.151,
+        "turns_with_stall_over_100ms_pct": 6.15
+      },
+      {
+        "buffer_s": 0.4,
+        "completed_playback_start_p95_s": 0.955,
+        "stall_p95_s": 0.061,
+        "turns_with_stall_over_100ms_pct": 4.62
+      },
+      {
+        "buffer_s": 0.5,
+        "completed_playback_start_p95_s": 1.055,
+        "stall_p95_s": 0.0,
+        "turns_with_stall_over_100ms_pct": 1.54
+      },
+      {
+        "buffer_s": 1.0,
+        "completed_playback_start_p95_s": 1.555,
+        "stall_p95_s": 0.0,
+        "turns_with_stall_over_100ms_pct": 0.0
+      }
+    ]
+  }
+}

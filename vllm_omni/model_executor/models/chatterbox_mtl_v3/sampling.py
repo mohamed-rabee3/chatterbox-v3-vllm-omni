@@ -33,6 +33,7 @@ from __future__ import annotations
 import threading
 from typing import Any
 
+import numpy as np
 import torch
 from vllm.config import VllmConfig
 from vllm.logger import init_logger
@@ -123,9 +124,9 @@ class _RowState:
         self.penalty = penalty
         self.policy = policy
         self.output_tokens = output_tokens
-        # Device-side "has this id been generated" mask, grown incrementally so
+        # CPU "has this id been generated" mask, grown incrementally so
         # the per-step cost is O(new tokens) rather than O(history).
-        self.seen: torch.Tensor | None = None
+        self.seen: np.ndarray | None = None
         self.seen_len = 0
 
 
@@ -198,9 +199,10 @@ class ChatterboxCFGLogitsProcessor(LogitsProcessor):
                 if isinstance(proc, ChatterboxCFGLogitsProcessor) and proc._pairs:
                     sampled = out.sampled_token_ids
                     num_rows = sampled.shape[0] if hasattr(sampled, "shape") else len(sampled)
-                    for cond_idx, uncond_idx, _ in proc._pairs:
-                        if cond_idx < num_rows and uncond_idx < num_rows:
-                            sampled[uncond_idx] = sampled[cond_idx]
+                    pairs = [(c, u) for c, u, _ in proc._pairs if c < num_rows and u < num_rows]
+                    if pairs:
+                        indices = torch.tensor(pairs, dtype=torch.long, device=sampled.device)
+                        sampled[indices[:, 1]] = sampled[indices[:, 0]]
                     break
             return out
 
@@ -266,35 +268,52 @@ class ChatterboxCFGLogitsProcessor(LogitsProcessor):
         num_rows = logits.shape[0]
         handled: set[int] = set()
 
-        for cond_idx, uncond_idx, cfg_scale in self._pairs:
-            if cond_idx >= num_rows or uncond_idx >= num_rows:
-                # Neither row is sampled this step (pure-prefill / partial
-                # schedule). Nothing to blend and nothing to fail.
-                continue
-            state = self._rows[cond_idx]
-
-            cond = logits[cond_idx].float()
-            uncond = logits[uncond_idx].float()
-            if not (torch.isfinite(cond).all() and torch.isfinite(uncond).all()):
-                # Concealing this would let a NaN propagate into the sample and
-                # produce silent garbage audio.
+        pairs = [(c, u, scale) for c, u, scale in self._pairs if c < num_rows and u < num_rows]
+        if pairs:
+            # A fixed-shape batch replaces per-caller kernel launches, finite
+            # checks, device-side nonzero and masked_scatter operations.
+            cond_indices = torch.tensor([p[0] for p in pairs], device=logits.device)
+            uncond_indices = torch.tensor([p[1] for p in pairs], device=logits.device)
+            states = [self._rows[p[0]] for p in pairs]
+            cond = logits[cond_indices].float()
+            uncond = logits[uncond_indices].float()
+            finite = torch.isfinite(cond).all(dim=1) & torch.isfinite(uncond).all(dim=1)
+            if not bool(finite.all()):
+                failed = (~finite).nonzero().flatten().cpu().tolist()
                 raise ChatterboxCFGError(
-                    f"non-finite raw speech logits for CFG pair {state.pair_id}"
+                    "non-finite raw speech logits for CFG pair "
+                    + ", ".join(states[i].pair_id for i in failed)
                 )
+            scales = torch.tensor([p[2] for p in pairs], device=logits.device, dtype=torch.float32)
+            guided = uncond + scales[:, None] * (cond - uncond)
+            hardened = torch.tensor(
+                [st.policy == POLICY_HARDENED for st in states], device=logits.device, dtype=torch.bool
+            )
+            guided.masked_fill_(hardened[:, None] & self._illegal_mask[None, :], float("-inf"))
 
-            guided = uncond + cfg_scale * (cond - uncond)
-
-            if state.policy == POLICY_HARDENED:
-                # AFTER the finite blend: masking both branches first would
-                # compute -inf - -inf = NaN.
-                guided = guided.masked_fill(self._illegal_mask, float("-inf"))
-
-            guided = self._apply_speech_repetition_penalty(state, guided)
-
-            logits[cond_idx] = guided
-            logits[uncond_idx] = guided
-            handled.add(cond_idx)
-            handled.add(uncond_idx)
+            # Histories originate on the CPU. Track membership there and send
+            # one dense boolean matrix, avoiding a synchronizing nonzero per
+            # row per token. State moves with its request, including rewinds.
+            seen = np.empty((len(states), K.SPEECH_VOCAB_SIZE), dtype=np.bool_)
+            for i, st in enumerate(states):
+                history = st.output_tokens
+                n = len(history)
+                if st.seen is None or n < st.seen_len:
+                    st.seen = np.zeros(K.SPEECH_VOCAB_SIZE, dtype=np.bool_)
+                    st.seen[K.START_SPEECH_TOKEN] = True
+                    st.seen_len = 0
+                for token in history[st.seen_len:n]:
+                    if 0 <= token < K.SPEECH_VOCAB_SIZE:
+                        st.seen[token] = True
+                st.seen_len = n
+                seen[i] = st.seen
+            mask = torch.from_numpy(seen).to(logits.device)
+            penalties = torch.tensor([st.penalty for st in states], device=logits.device, dtype=torch.float32)
+            penalized = torch.where(guided < 0, guided * penalties[:, None], guided / penalties[:, None])
+            guided = torch.where(mask, penalized, guided)
+            logits[cond_indices] = guided
+            logits[uncond_indices] = guided
+            handled = {i for c, u, _ in pairs for i in (c, u)}
 
         # Strict policy: any CFG row that was sampled this step without a
         # complete pair is a guidance failure, not an unguided request.
@@ -312,44 +331,3 @@ class ChatterboxCFGLogitsProcessor(LogitsProcessor):
             row[K.STOP_SPEECH_TOKEN] = 0.0
 
         return logits
-
-    def _apply_speech_repetition_penalty(
-        self, state: _RowState, guided: torch.Tensor
-    ) -> torch.Tensor:
-        """Reference penalty over ``[BOS] + generated speech ids``.
-
-        ``score < 0 -> score * penalty`` else ``score / penalty``, applied once
-        per distinct id (HF's ``RepetitionPenaltyLogitsProcessor``).
-        """
-        if state.penalty == 1.0:
-            return guided
-
-        seen = state.seen
-        if seen is None:
-            seen = torch.zeros(K.SPEECH_VOCAB_SIZE, dtype=torch.bool, device=guided.device)
-            # The reference seeds the history with the speech BOS token.
-            seen[K.START_SPEECH_TOKEN] = True
-            state.seen = seen
-            state.seen_len = 0
-
-        history = state.output_tokens
-        n = len(history)
-        if n < state.seen_len:
-            # History was rewound (preemption/recompute): rebuild rather than
-            # keep penalising ids that were never actually generated.
-            seen.zero_()
-            seen[K.START_SPEECH_TOKEN] = True
-            state.seen_len = 0
-        if n > state.seen_len:
-            new_ids = history[state.seen_len : n]
-            idx = torch.as_tensor(new_ids, dtype=torch.long, device=guided.device)
-            idx = idx[(idx >= 0) & (idx < K.SPEECH_VOCAB_SIZE)]
-            if idx.numel():
-                seen[idx] = True
-            state.seen_len = n
-
-        scores = guided[seen]
-        guided = guided.masked_scatter(
-            seen, torch.where(scores < 0, scores * state.penalty, scores / state.penalty)
-        )
-        return guided

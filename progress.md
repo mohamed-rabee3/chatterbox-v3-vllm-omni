@@ -1222,3 +1222,135 @@ Three routes past it, in order of value:
    fundamental.
 3. **BF16.** Excluded here as a quality change; it is next in the plan's own
    optimization order.
+
+
+## 2026-09-09 — concurrent streaming latency optimization
+
+Restored the runtime on the current RTX 5090 and collected new Locust baselines
+using three explicitly documented public reference recordings. Batched the AR
+embedding/CFG hot path, removed redundant hidden/reference transfers, aligned
+connector chunks with the effective growth-2 acoustic schedule, enabled Llama
+PIECEWISE graphs, fixed resumed metadata validation, and added an acoustic
+scheduler that prioritizes first chunks while continuing admitted streams.
+The scheduler's full-admission eligibility bug was reproduced, fixed, and pinned
+by a regression test. Acoustic position biases now reside on the GPU; attention
+mask repair avoids host synchronization. FP32 estimator compilation and bounded
+exact-shape encoder/flow graph replay complete the selected profile.
+
+Locust conversation p95 TTFA: 20 users 2.460 -> 0.879 seconds; 30 users
+3.663 -> 1.192 seconds. Three final runs covered 854 requests with 100 intentional
+interruptions and zero failures/unfinished requests. 59 targeted regression
+checks passed with the selected compiled streaming settings. Five smoke outputs
+retain their lengths and sample rates, with maximum waveform difference 0.000397
+of full scale. These results still do not establish sub-500 ms p95 or real-time
+30-stream playback capacity. See [the complete report](port/artifacts/latency/README.md)
+for the workload, cold compilation cost, saturation results, negative
+experiments, reproducible commands, and raw JSON evidence.
+# TTS-only capacity follow-up — 2026-09-09
+
+Locust workload v2 waits for playback before the next conversational gap, uses
+distinct per-user RNG streams, and reports buffer-aware playback metrics.
+Six 2–3 minute runs at 1/2/4/8/30 callers made 565 requests: 527 completed,
+30 intentionally interrupted, eight failed with the truncation guard, and zero
+unfinished. Warm four-caller p95 TTFA is 549 ms with 251 ms p95 cumulative gaps
+after a 200 ms client buffer. Paced 30-caller p95 TTFA is 946 ms with 12.281 s
+p95 cumulative gaps (peak 29 overlapping requests). Two is the highest tested
+multi-caller level meeting the provisional latency/playback thresholds, but
+no tested level meets the zero-failure qualification. This is not an exact
+production capacity ceiling. Full evidence, assumptions, and optimization
+candidates: `port/artifacts/latency/capacity-paced/README.md`.
+
+## 2026-09-09 (later) — 20-caller real-time optimization, with quality restored
+
+The previous round's `capacity` profile had bought throughput partly with
+quality: FP16 flow estimator, three flow-matching steps, 256-code window. This
+round restored FP32, four flow steps and the full watermark, and recovered the
+speed from serialization and scheduling instead.
+
+Instrumented the acoustic stage first (`CBX_ACOUSTIC_PROFILE=1`) rather than
+guessing. Under 20 callers it was **95-97% busy** — the ceiling — with flow 82%,
+vocoder 14%, watermark 3%, and only **1.3 rows per batch** despite
+`acoustic_max_batch_rows: 32`. Stage-0 ITL measured 12 ms under the same load
+and was never the constraint.
+
+Four findings drove the round:
+
+* **The Perth watermark is a CPU torch model applied per row per chunk inside
+  the stage-1 forward** — 40 ms for a 0.2 s chunk, 107 ms for a 6.4 s one, with
+  the GPU idle throughout. Moving its DSP to the acoustic device (the resampler
+  stays on CPU) is 3.5-19.8x faster and changes the waveform by at most 7e-6,
+  about 1e-4 of the watermark's own perturbation. It fell to 3% of stage-1 time.
+  The CPU fallback applies rows across a thread pool and is bit-identical.
+* **The vocoder ran per row while the flow solver was batched.** Rows in a group
+  share code *and* prompt length, so it batches cleanly, and `_draw` already
+  supported per-row generators, so the RNG stream is preserved exactly.
+  1.50x on the acoustic decode combined with the watermark move, max deviation
+  7.1e-5 of peak — below the 3.97e-4 already shipped from compilation.
+* **Flow cost is dominated by the number of decodes, not their length**
+  (~90-100 ms per call across very different sequence lengths), because every
+  chunk re-renders the 250-code reference prompt. A steeper ladder
+  (first 5 → 10, growth 1.8 → 2.5, cap 100 → 300) makes fewer, larger decodes,
+  each with *more* context. Acoustic busy fell to 56-79%, and the streaming gate
+  shows speaker similarity **improving** (0.8308 → 0.8448, 0.8965 → 0.9048,
+  one-shot 0.8689/0.9105) at CER 0.0 with exact length match. Acoustic overhead
+  x2.41/x2.92 → x1.59/x1.66. The seam metric is the one regression
+  (1.2 → 1.33, 1.22 → 1.51): fewer joins, each spanning a larger context shift.
+* **All playback starvation sat in the first two chunk transitions.** The
+  encoder's 3-code lookahead is subtracted from the first block, so a 5-code
+  first block emits 2 codes — 60 ms of audio — and the client cannot survive
+  until chunk 1. First block 10 cut stall p95 2.33 s → 1.21 s; 15 cost TTFA for
+  no further benefit.
+
+Also fixed: an empty emitted chunk crashed Perth's STFT (would have taken the
+acoustic engine down); the graph cache filled within 11 s of startup and then
+silently ran eager forever (raised 12 → 96, eager fallbacks now counted); and
+both launch paths now derive the chunk ladder from the profile's connector block
+so stage 0 and stage 1 cannot disagree.
+
+A fifth finding came out of the confirmation runs: **cold start was about twice
+as bad as warm** (p95 buffered stall 1.184 s vs 0.588 s at 20 callers), because
+`warm_acoustic_graphs` prewarmed a hardcoded rung list belonging to the old
+ladder and the profile passed it an empty prompt list, so it did nothing. It now
+derives its rungs from the deploy's own ladder and is enabled with the 250-code
+reference prompt; a cold server then measures 0.671 s, close to warm.
+
+Net, FP32 and four flow steps against the previous FP16 three-step profile, on a
+freshly restarted server: buffered playback stall p95 falls 30-47% at every
+level — 16 callers 0.690 → 0.417 s, 20 callers 0.700 → 0.491 s, 24 callers
+1.559 → 0.831 s, 30 callers 2.637 → 1.639 s — with throughput equal or better
+(1.94 → 2.08 turns/s at 24, 2.22 → 2.51 at 30). TTFA p95 rises 0.490 → 0.795 s
+at 20 callers, the deliberate first-chunk trade, and stays under 1 s everywhere.
+1500 turns, zero failures, zero unfinished.
+
+The whole suite passes — **114 tests, 0 failures** — after regenerating the
+golden captures for both voices from the official runner, so this includes the
+full Gate A/B/D fidelity gates rather than the streaming subset. A new
+`test_acoustic_serving_paths.py` covers the paths this profile actually enables,
+which the existing Gate D tests did not: they build `ChatterboxS3Gen()` with the
+batched vocoder off. Row isolation under the batched vocoder measures
+0.010-0.059% of peak against solo decode — inside the port's 0.1% bar, but 3-4x
+wider than the 0.008-0.017% flow-only batching produces, and recorded as such.
+Voice isolation, determinism and cancellation hold.
+
+That new gate also surfaced a latent hazard: `_disable_conv_tf32()` turns cuDNN
+TF32 off **process-wide** as a side effect of constructing the acoustic model,
+and the conditioning encoder is sensitive to it — it reproduces the reference
+speaker embedding exactly (0.0) with TF32 on and drifts 2.9e-2 relative with it
+off, 293x the Gate A threshold. The shipped two-stage deploy is unaffected (the
+encoder runs in the input processor; stage 1 only reshapes the transferred
+payload), but it made the suite order-dependent, and it would bite any
+single-process deployment. The test file restores the flag on teardown; the
+global itself was left alone as a deliberate correctness setting whose scoping
+deserves its own qualification.
+
+Rejected with numbers: FP16 estimator (0.267 max-abs waveform change for 22% of
+GPU time), three flow steps (13%), `acoustic_graph_max_codes: 300` (capture
+overhead, stall 0.885 → 1.550 s), first block 15.
+
+**Still not smooth by a strict reading**: 42% of turns at 20 callers underflow a
+200 ms client buffer by >100 ms, concentrated in `greet` turns (71%) which arrive
+in bursts at call setup. Long `explain` turns are at 24%. The flow solver is
+launch-bound at ~1.1-1.4 rows per batch, so the largest remaining lever is
+grouping more rows per pass — which needs a scheduler that groups by decode rung
+rather than by transport geometry. Full evidence:
+`port/artifacts/latency/final/README.md`.

@@ -1,0 +1,27 @@
+[
+  {
+    "file": "ar_plain.wav",
+    "same_shape_and_sample_rate": true,
+    "max_abs_diff": 3.0517578125e-05
+  },
+  {
+    "file": "en_plain.wav",
+    "same_shape_and_sample_rate": true,
+    "max_abs_diff": 3.0517578125e-05
+  },
+  {
+    "file": "en_short.wav",
+    "same_shape_and_sample_rate": true,
+    "max_abs_diff": 3.0517578125e-05
+  },
+  {
+    "file": "mixed_ar_en.wav",
+    "same_shape_and_sample_rate": true,
+    "max_abs_diff": 3.0517578125e-05
+  },
+  {
+    "file": "stream.wav",
+    "same_shape_and_sample_rate": true,
+    "max_abs_diff": 3.0517578125e-05
+  }
+]

@@ -92,18 +92,25 @@ class ConditionalCFM(BASECFM):
             meanflow: meanflow mode
         """
         in_dtype = x.dtype
-        x, t_span, mu, mask, spks, cond = cast_all(x, t_span, mu, mask, spks, cond, dtype=self.estimator.dtype)
+        # PORT: reduced-precision estimator weights/inputs do not require a
+        # reduced-precision ODE state or CFG arithmetic.
+        fp32_solver = getattr(self, "fp32_solver", False)
+        solver_dtype = torch.float32 if fp32_solver else self.estimator.dtype
+        x, t_span, mu, mask, spks, cond = cast_all(x, t_span, mu, mask, spks, cond, dtype=solver_dtype)
 
         # Duplicated batch dims are for CFG
         # Do not use concat, it may cause memory format changed and trt infer with wrong results!
         B, T = mu.size(0), x.size(2)
-        x_in    = torch.zeros([2 * B, 80, T], device=x.device, dtype=x.dtype)
+        x_in    = torch.zeros([2 * B, 80, T], device=x.device, dtype=self.estimator.dtype)
         mask_in = torch.zeros([2 * B,  1, T], device=x.device, dtype=x.dtype)
         mu_in   = torch.zeros([2 * B, 80, T], device=x.device, dtype=x.dtype)
         t_in    = torch.zeros([2 * B       ], device=x.device, dtype=x.dtype)
         spks_in = torch.zeros([2 * B, 80   ], device=x.device, dtype=x.dtype)
         cond_in = torch.zeros([2 * B, 80, T], device=x.device, dtype=x.dtype)
         r_in    = torch.zeros([2 * B       ], device=x.device, dtype=x.dtype) # (only used for meanflow)
+        if fp32_solver:
+            mask_in, mu_in, t_in, spks_in, cond_in, r_in = cast_all(
+                mask_in, mu_in, t_in, spks_in, cond_in, r_in, dtype=self.estimator.dtype)
 
         for t, r in zip(t_span[:-1], t_span[1:]):
             t = t.unsqueeze(dim=0)
@@ -135,6 +142,8 @@ class ConditionalCFM(BASECFM):
                 x=x_in, mask=mask_in, mu=mu_in, t=t_in, spks=spks_in, cond=cond_in,
                 r=r_in if meanflow else None,
             )
+            if fp32_solver:
+                dxdt = dxdt.float()
             dxdt, cfg_dxdt = torch.split(dxdt, [B, B], dim=0)
             dxdt = ((1.0 + self.inference_cfg_rate) * dxdt - self.inference_cfg_rate * cfg_dxdt)
             dt = r - t

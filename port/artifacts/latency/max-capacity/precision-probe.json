@@ -1,0 +1,74 @@
+[
+  {
+    "variant": "fp32",
+    "codes": 5,
+    "seconds": 0.1925097496714443,
+    "finite": true,
+    "max_abs_diff": 0.0,
+    "rms_diff": 0.0
+  },
+  {
+    "variant": "fp32",
+    "codes": 75,
+    "seconds": 0.19518106469574073,
+    "finite": true,
+    "max_abs_diff": 0.0,
+    "rms_diff": 0.0
+  },
+  {
+    "variant": "fp32",
+    "codes": 155,
+    "seconds": 0.20728647569194436,
+    "finite": true,
+    "max_abs_diff": 0.0,
+    "rms_diff": 0.0
+  },
+  {
+    "variant": "bf16_estimator",
+    "codes": 5,
+    "seconds": 0.2367312463466078,
+    "finite": true,
+    "max_abs_diff": 0.0014561512507498264,
+    "rms_diff": 0.00033949213684536517
+  },
+  {
+    "variant": "bf16_estimator",
+    "codes": 75,
+    "seconds": 0.23980654201780757,
+    "finite": true,
+    "max_abs_diff": 0.4303158223628998,
+    "rms_diff": 0.026030687615275383
+  },
+  {
+    "variant": "bf16_estimator",
+    "codes": 155,
+    "seconds": 0.23951552963505188,
+    "finite": true,
+    "max_abs_diff": 1.2400250434875488,
+    "rms_diff": 0.03922412544488907
+  },
+  {
+    "variant": "fp16_estimator",
+    "codes": 5,
+    "seconds": 0.23867127400202057,
+    "finite": true,
+    "max_abs_diff": 0.00015318859368562698,
+    "rms_diff": 3.742043918464333e-05
+  },
+  {
+    "variant": "fp16_estimator",
+    "codes": 75,
+    "seconds": 0.2503084233030677,
+    "finite": true,
+    "max_abs_diff": 0.19536539912223816,
+    "rms_diff": 0.00703276414424181
+  },
+  {
+    "variant": "fp16_estimator",
+    "codes": 155,
+    "seconds": 0.24549354566261172,
+    "finite": true,
+    "max_abs_diff": 0.13452035188674927,
+    "rms_diff": 0.004545880481600761
+  }
+]

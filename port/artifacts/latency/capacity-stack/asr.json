@@ -1,0 +1,37 @@
+[
+  {
+    "path": "port/artifacts/latency/capacity-stack/smoke/ar_plain.wav",
+    "language": "ar",
+    "transcript": " هياك الله موئدك بكرة الساعة التاسعة صباحا",
+    "audio_s": 4.36,
+    "wall_s": 0.7548625918570906
+  },
+  {
+    "path": "port/artifacts/latency/capacity-stack/smoke/early_eos_en.wav",
+    "language": "en",
+    "transcript": " Good morning. You have reached the customer care line. What can I do for you?",
+    "audio_s": 4.48,
+    "wall_s": 0.0982883011456579
+  },
+  {
+    "path": "port/artifacts/latency/capacity-stack/smoke/en_long.wav",
+    "language": "en",
+    "transcript": " There are two ways to do this. You can either keep the current plan and add the extra seats one at a time, which bills at the standard rate, or you can move to the annual plan, which includes 10 seats and works out cheaper if you expect the team to grow. I can apply either one before the end of today's call.",
+    "audio_s": 19.08,
+    "wall_s": 0.2830578701104969
+  },
+  {
+    "path": "port/artifacts/latency/capacity-stack/smoke/en_plain.wav",
+    "language": "en",
+    "transcript": " Hello, this is the Reference Implementation speaking.",
+    "audio_s": 3.0,
+    "wall_s": 0.07107783085666597
+  },
+  {
+    "path": "port/artifacts/latency/capacity-stack/smoke/mixed_ar_en.wav",
+    "language": "ar",
+    "transcript": " حياك الله حسابك على نتفليكس تم تجديده اليوم",
+    "audio_s": 4.84,
+    "wall_s": 0.11117478599771857
+  }
+]

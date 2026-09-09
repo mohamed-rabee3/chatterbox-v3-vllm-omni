@@ -1,0 +1,73 @@
+{
+  "users": 16,
+  "requests_started": 284,
+  "requests_unfinished": 0,
+  "peak_inflight_requests": 16,
+  "workload_seed": "42",
+  "tts_seed": "42",
+  "wait_s": [
+    "1.5",
+    "6.0"
+  ],
+  "barge_in_rate": 0.05,
+  "workload_version": 2,
+  "pace_playback": true,
+  "playback_buffer_s": 0.2,
+  "wall_s": 194.9,
+  "turns_completed": 266,
+  "first_audio_observed": 284,
+  "first_chunk_audio_s_p50": 0.26,
+  "playback_stall_s_p95": 0.981,
+  "buffered_playback_stall_s_p95": 0.781,
+  "buffered_turns_stalled_over_100ms_pct": 22.56,
+  "playback_start_s_p95": 1.305,
+  "barge_ins": 18,
+  "failures": 0,
+  "failure_examples": [],
+  "ttfa_s": {
+    "p50": 0.434,
+    "p90": 0.781,
+    "p95": 1.105,
+    "p99": 1.605,
+    "max": 1.618,
+    "mean": 0.507
+  },
+  "ttfa_under_1s_pct": 94.0,
+  "ttfa_under_2s_pct": 100.0,
+  "ttfa_by_turn_class_s": {
+    "ack": {
+      "n": 70,
+      "p50": 0.419,
+      "p95": 0.864
+    },
+    "close": {
+      "n": 24,
+      "p50": 0.456,
+      "p95": 0.723
+    },
+    "explain": {
+      "n": 35,
+      "p50": 0.418,
+      "p95": 0.77
+    },
+    "greet": {
+      "n": 37,
+      "p50": 0.576,
+      "p95": 1.61
+    },
+    "reply": {
+      "n": 118,
+      "p50": 0.431,
+      "p95": 0.782
+    }
+  },
+  "total_latency_s": {
+    "p50": 1.967,
+    "p95": 6.802,
+    "max": 8.712
+  },
+  "audio_seconds_total": 1592.8,
+  "audio_s_per_wall_s": 8.17,
+  "turns_per_s": 1.365,
+  "realtime_factor_p50": 2.45
+}

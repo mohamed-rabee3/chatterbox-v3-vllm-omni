@@ -273,8 +273,8 @@ def codec_async_chunk(
 ) -> OmniPayloadStruct | None:
     """Stream completed codec blocks from stage 0 to stage 1.
 
-    State lives on the request under :data:`_STATE_KEY` and is a
-    :class:`CodecCursor`, so:
+    State is keyed by request id in :data:`_CURSORS` and mirrored onto
+    the request under :data:`_STATE_KEY`, so:
 
     * ids are consumed cumulatively and monotonically -- a repeated callback
       returns ``None`` instead of re-emitting the previous block;
@@ -309,6 +309,17 @@ def codec_async_chunk(
         raise ValueError(
             f"invalid chunk config: first_block={first_block} growth={growth} "
             f"lookahead={lookahead}"
+        )
+
+    if (first_block, growth, max_block) != (
+        K.ACOUSTIC_STREAM_FIRST_BLOCK, K.ACOUSTIC_STREAM_BLOCK_GROWTH,
+        K.ACOUSTIC_STREAM_MAX_BLOCK,
+    ):
+        raise ValueError(
+            "connector chunk schedule must match the acoustic stage: "
+            f"first={K.ACOUSTIC_STREAM_FIRST_BLOCK}, "
+            f"growth={K.ACOUSTIC_STREAM_BLOCK_GROWTH}, "
+            f"max={K.ACOUSTIC_STREAM_MAX_BLOCK}"
         )
 
     cursor = _CURSORS.get(str(request_id))
@@ -353,7 +364,7 @@ def codec_async_chunk(
     if finished and not cursor.is_terminal:
         cursor.mark_terminal(TerminalReason.LENGTH_LIMIT)
 
-    # Send only the codes produced since the last call. The acoustic stage
+    # Send only the codes produced since the last acoustic decode boundary. The acoustic stage
     # keeps each request's cumulative sequence itself (it has to: the flow
     # decoder needs the whole prefix), so putting cumulative lists on the wire
     # as well would make the two accumulations compound -- a ~100-code
@@ -365,8 +376,9 @@ def codec_async_chunk(
     # guarantees the final payload is non-empty, so the flag always has a
     # carrier and the last chunk of every utterance actually gets decoded.
     flushing = bool(finished or cursor.is_terminal)
-    chunk = cursor.take_chunk(
-        block=1, holdback=0 if flushing else 1, force_flush=flushing
+    chunk = cursor.take_scheduled_chunk(
+        first_block=first_block, growth=growth, max_block=max_block,
+        force_flush=flushing,
     )
     is_final = flushing
     terminal = False
@@ -388,7 +400,9 @@ def codec_async_chunk(
     if terminal:
         _release_cursor(request_id)
     codes = torch.tensor(chunk, dtype=torch.long).reshape(-1)
-    embed = _reference_embed(multimodal_output or {})
+    # Conditioning is immutable for this request and retained on the acoustic
+    # device. Later chunks need only codes and sequencing metadata.
+    embed = _reference_embed(multimodal_output or {}) if cursor.chunk_sequence == 1 else None
     return OmniPayloadStruct(
         codes=CodesStruct(audio=codes),
         embed=EmbeddingsStruct(**embed) if embed else None,

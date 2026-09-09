@@ -10,6 +10,7 @@ correctly terminated and exactly as long as the one-shot decode.
 from __future__ import annotations
 
 import sys
+import os
 
 import numpy as np
 import pytest
@@ -35,9 +36,20 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 @pytest.fixture(scope="module")
 def s3gen():
-    m = ChatterboxS3Gen(apply_watermark=False)
+    low_latency = os.environ.get("CHATTERBOX_TEST_LOW_LATENCY") == "1"
+    m = ChatterboxS3Gen(
+        apply_watermark=False,
+        cfm_timesteps=4 if low_latency else K.DEFAULT_CFM_TIMESTEPS,
+        flow_cudagraphs=low_latency,
+        estimator_dtype=os.environ.get("CHATTERBOX_TEST_ESTIMATOR_DTYPE", "float32"),
+        vocoder_cudagraphs=os.environ.get("CHATTERBOX_TEST_VOCODER_GRAPHS") == "1",
+        materialize_vocoder_weights=os.environ.get("CHATTERBOX_TEST_VOCODER_GRAPHS") == "1",
+        compile_estimator=low_latency,
+    )
     m.load_weights_from_dir(MODEL_DIR)
-    return m.to(DEVICE).eval()
+    m = m.to(DEVICE).eval()
+    m.warm_compiled_estimator()
+    return m
 
 
 def load_conditioning(voice: str = "ex01") -> ReferenceConditioning:
@@ -266,3 +278,14 @@ def test_take_prefix_waits_for_more_than_the_lookahead():
     assert cursor.take_prefix(
         first_block=1, growth=1.0, max_block=400, lookahead=3
     ) is None
+
+@torch.inference_mode()
+def test_cached_stream_noise_is_reused_and_released(s3gen):
+    cond, codes = load_conditioning(), golden_codes()
+    req = AcousticRequest('noise-cache', codes[:5], cond, seed=42, finalize=False, streaming=True)
+    a = s3gen._flow_noise(req, 100, torch.device(DEVICE), torch.float32)
+    b = s3gen._flow_noise(req, 200, torch.device(DEVICE), torch.float32)
+    assert a.data_ptr() == b.data_ptr()
+    torch.testing.assert_close(a, b[:, :100], rtol=0, atol=0)
+    s3gen.release_stream_state(['noise-cache'])
+    assert 'noise-cache' not in s3gen._stream_noise

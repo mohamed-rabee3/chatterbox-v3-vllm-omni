@@ -65,6 +65,13 @@ class ReferenceConditioning:
     source_seconds: float = 0.0
     preprocessor_version: str = K.PREPROCESSOR_VERSION
     checkpoint_profile: str = K.DEFAULT_CHECKPOINT_PROFILE
+    # Host-side geometry for serving; avoids a GPU synchronization per chunk.
+    prompt_token_count: int | None = None
+
+    def acoustic_prompt_length(self) -> int:
+        if self.prompt_token_count is not None:
+            return self.prompt_token_count
+        return int(self.prompt_token_len.reshape(-1)[0].item())
 
     def to(self, device: torch.device | str) -> "ReferenceConditioning":
         """Device-local view. Returns ``self`` when already on ``device``."""

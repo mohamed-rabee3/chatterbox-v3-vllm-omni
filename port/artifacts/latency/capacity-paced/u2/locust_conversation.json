@@ -1,0 +1,75 @@
+{
+  "users": 2,
+  "requests_started": 29,
+  "requests_unfinished": 0,
+  "peak_inflight_requests": 2,
+  "workload_seed": "42",
+  "tts_seed": "42",
+  "wait_s": [
+    "1.5",
+    "6.0"
+  ],
+  "barge_in_rate": 0.05,
+  "workload_version": 2,
+  "pace_playback": true,
+  "playback_buffer_s": 0.2,
+  "wall_s": 118.4,
+  "turns_completed": 27,
+  "first_audio_observed": 29,
+  "first_chunk_audio_s_p50": 0.07,
+  "playback_stall_s_p95": 0.197,
+  "buffered_playback_stall_s_p95": 0.003,
+  "buffered_turns_stalled_over_100ms_pct": 0.0,
+  "playback_start_s_p95": 0.55,
+  "barge_ins": 1,
+  "failures": 1,
+  "failure_examples": [
+    "ChunkedEncodingError: Response ended prematurely"
+  ],
+  "ttfa_s": {
+    "p50": 0.264,
+    "p90": 0.317,
+    "p95": 0.35,
+    "p99": 0.365,
+    "max": 0.366,
+    "mean": 0.274
+  },
+  "ttfa_under_1s_pct": 100.0,
+  "ttfa_under_2s_pct": 100.0,
+  "ttfa_by_turn_class_s": {
+    "ack": {
+      "n": 7,
+      "p50": 0.271,
+      "p95": 0.312
+    },
+    "close": {
+      "n": 3,
+      "p50": 0.257,
+      "p95": 0.288
+    },
+    "explain": {
+      "n": 1,
+      "p50": 0.254,
+      "p95": 0.254
+    },
+    "greet": {
+      "n": 4,
+      "p50": 0.301,
+      "p95": 0.365
+    },
+    "reply": {
+      "n": 14,
+      "p50": 0.261,
+      "p95": 0.302
+    }
+  },
+  "total_latency_s": {
+    "p50": 2.123,
+    "p95": 2.631,
+    "max": 6.999
+  },
+  "audio_seconds_total": 121.9,
+  "audio_s_per_wall_s": 1.03,
+  "turns_per_s": 0.228,
+  "realtime_factor_p50": 2.25
+}

@@ -1,0 +1,4 @@
+users=8 active_peak=8 completed=91 failures=0 unfinished=0 TTFA p50=0.278s p95=1.083s playback_stall_p95=1.262s turns/s=0.69
+users=16 active_peak=16 completed=180 failures=0 unfinished=0 TTFA p50=0.456s p95=0.817s playback_stall_p95=1.959s turns/s=1.31
+users=24 active_peak=20 completed=229 failures=0 unfinished=0 TTFA p50=0.641s p95=0.946s playback_stall_p95=4.863s turns/s=1.69
+users=30 active_peak=27 completed=230 failures=0 unfinished=0 TTFA p50=0.654s p95=0.950s playback_stall_p95=7.549s turns/s=1.66

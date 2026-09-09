@@ -1,0 +1,8 @@
+{
+  "voice": "spk1272",
+  "language": "en",
+  "text": "Hello, thanks for calling support. How can I help you today?",
+  "sample_rate": 24000,
+  "dtype": "int16",
+  "ttfa_s": 0.9554587961174548
+}

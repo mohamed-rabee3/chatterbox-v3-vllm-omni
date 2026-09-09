@@ -176,6 +176,38 @@ class CodecCursor:
         self.chunk_sequence += 1
         return self.valid_codes[start:end]
 
+    def take_scheduled_chunk(
+        self, *, first_block: int, growth: float, max_block: int,
+        force_flush: bool = False,
+    ) -> list[int] | None:
+        """Send deltas only at acoustic decode boundaries, retaining a final code.
+
+        Unlike ``take_chunk``, non-final sends are exactly one scheduled block
+        even if a producer callback contains several tokens. This preserves
+        identical decode prefixes across callers without a stage-1 dispatch
+        and reference transfer for every single AR token.
+        """
+        if first_block < 1 or growth < 1 or max_block < 1:
+            raise ValueError("invalid acoustic chunk schedule")
+        if not self.current_block:
+            self.current_block = first_block
+        flushing = force_flush or self.is_terminal
+        available = self.valid_codec_count - self.next_codec_to_commit
+        if flushing:
+            take = available
+        else:
+            if available - 1 < self.current_block:
+                return None
+            take = self.current_block
+        if take <= 0:
+            return None
+        start = self.next_codec_to_commit
+        self.next_codec_to_commit += take
+        self.chunk_sequence += 1
+        if not flushing:
+            self.current_block = min(int(self.current_block * growth), max_block)
+        return self.valid_codes[start:self.next_codec_to_commit]
+
     #: Codec count at which the next incremental decode fires.
     next_decode_at: int = 0
     #: Current block size; grows so cost stays near-linear (see take_prefix).

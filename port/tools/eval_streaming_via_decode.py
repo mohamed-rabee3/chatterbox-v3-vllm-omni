@@ -54,6 +54,8 @@ def main() -> int:
     ap.add_argument("--asr", action="store_true")
     ap.add_argument("--cfm", type=int, default=0,
                     help="override acoustic CFM solver steps (0 = checkpoint default)")
+    ap.add_argument("--ctx-window", type=int, default=0,
+                    help="bounded left-context window in codes (0 = re-decode whole prefix)")
     args = ap.parse_args()
 
     outdir = Path(args.outdir)
@@ -72,6 +74,7 @@ def main() -> int:
         "growth": args.growth,
         "crossfade_samples": s3gen.stream_crossfade_samples,
         "cfm_timesteps": s3gen.cfm_timesteps,
+        "ctx_window": args.ctx_window,
         "cases": {},
     }
 
@@ -93,14 +96,23 @@ def main() -> int:
         points = chunk_schedule(n, args.first_block, args.growth, K.ACOUSTIC_STREAM_MAX_BLOCK)
         rid = f"{case}-stream"
         pieces, tokens_decoded, first_at = [], 0, None
+        last_at = 0
         for k in points:
+            is_final = k >= n
+            window = 0
+            if not is_final and args.ctx_window > 0 and k > args.ctx_window:
+                w_eff = max(args.ctx_window, k - last_at + 96)
+                window = max(0, k - w_eff)
+            decode_codes = codes[:k] if is_final else codes[window:k]
+            if not is_final:
+                last_at = k
             res = s3gen.decode([
                 AcousticRequest(
-                    rid, codes[:k], cond, seed=args.seed,
-                    finalize=(k >= n), streaming=True,
+                    rid, decode_codes, cond, seed=args.seed,
+                    finalize=is_final, streaming=True, token_offset=window,
                 )
             ])[0]
-            tokens_decoded += k
+            tokens_decoded += int(decode_codes.shape[0])
             if res.audio.numel():
                 if first_at is None:
                     first_at = k

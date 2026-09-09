@@ -73,6 +73,53 @@ class AcousticError(RuntimeError):
     """The acoustic stage refused to produce audio."""
 
 
+#: Set CBX_ACOUSTIC_PROFILE=1 to log where stage-1 wall time actually goes.
+#: Off by default and it costs one `perf_counter` per phase when on; the
+#: synchronisation it needs to attribute GPU time makes it a diagnostic, not a
+#: production setting.
+_PROFILE = bool(int(os.environ.get("CBX_ACOUSTIC_PROFILE", "0")))
+_PROFILE_EVERY = float(os.environ.get("CBX_ACOUSTIC_PROFILE_SECS", "15"))
+
+
+class _AcousticStats:
+    """Rolling per-phase totals for the acoustic decode, logged periodically."""
+
+    def __init__(self) -> None:
+        import time as _t
+
+        self._t = _t
+        self.reset(_t.perf_counter())
+
+    def reset(self, now: float) -> None:
+        self.t0 = now
+        self.calls = 0
+        self.rows = 0
+        self.codes = 0
+        self.emitted_samples = 0
+        self.phases = {"setup": 0.0, "flow": 0.0, "vocoder": 0.0,
+                       "watermark": 0.0, "other": 0.0}
+        self.eager_flow = 0
+        self.eager_voc = 0
+
+    def maybe_log(self) -> None:
+        now = self._t.perf_counter()
+        wall = now - self.t0
+        if wall < _PROFILE_EVERY or not self.calls:
+            return
+        total = sum(self.phases.values())
+        parts = " ".join(
+            f"{k}={v * 1e3 / self.calls:.1f}ms({100.0 * v / max(total, 1e-9):.0f}%)"
+            for k, v in self.phases.items()
+        )
+        logger.info(
+            "[cbx-acoustic] %.0fs: %d batches, %.2f rows/batch, busy %.0f%% of wall | %s "
+            "| audio_out %.2fx realtime | eager flow=%d voc=%d",
+            wall, self.calls, self.rows / self.calls, 100.0 * total / wall, parts,
+            self.emitted_samples / float(K.S3GEN_SR) / wall, self.eager_flow, self.eager_voc,
+        )
+        self.reset(now)
+
+
 @dataclass(frozen=True)
 class AcousticRequest:
     """One acoustic decode job."""
@@ -120,6 +167,10 @@ class AcousticRequest:
         ]
         if not ragged:
             key.append(int(self.codes.shape[-1]))
+            # Equal generated lengths alone are insufficient when reference
+            # clips have different lengths: the bidirectional encoder would
+            # see padding for the shorter row.
+            key.append(self.conditioning.acoustic_prompt_length())
         return tuple(key)
 
 
@@ -180,6 +231,17 @@ class ChatterboxS3Gen(torch.nn.Module):
         deterministic_convolutions: bool = True,
         ragged_batching: bool = False,
         max_batch_rows: int = 8,
+        flow_cudagraphs: bool = False,
+        compile_estimator: bool = False,
+        estimator_dtype: str = "float32",
+        graph_cache_size: int = 16,
+        graph_max_codes: int = 75,
+        prewarm_prompt_tokens: tuple[int, ...] = (),
+        materialize_vocoder_weights: bool = False,
+        vocoder_cudagraphs: bool = False,
+        watermark_workers: int = K.ACOUSTIC_WATERMARK_WORKERS,
+        watermark_device: str = K.ACOUSTIC_WATERMARK_DEVICE,
+        batch_vocoder: bool = False,
     ) -> None:
         super().__init__()
         if deterministic_convolutions:
@@ -194,11 +256,31 @@ class ChatterboxS3Gen(torch.nn.Module):
         self.ragged_batching = bool(ragged_batching)
         self.max_batch_rows = max(1, int(max_batch_rows))
         self.s3gen = S3Gen()
+        self.flow_cudagraphs = bool(flow_cudagraphs)
+        self.compile_estimator = bool(compile_estimator)
+        if estimator_dtype not in {"float32", "float16", "bfloat16"}:
+            raise ValueError(f"unsupported acoustic estimator dtype: {estimator_dtype}")
+        self.estimator_dtype = getattr(torch, estimator_dtype)
+        self.graph_cache_size = max(1, int(graph_cache_size))
+        self.graph_max_codes = max(5, int(graph_max_codes))
+        self.prewarm_prompt_tokens = tuple(int(n) for n in prewarm_prompt_tokens)
+        self.materialize_vocoder_weights = bool(materialize_vocoder_weights)
+        self.vocoder_cudagraphs = bool(vocoder_cudagraphs)
+        self._flow_graphs = {}
+        self._flow_graph_pool = None
         self._watermarker = None
+        self.watermark_workers = max(1, int(watermark_workers))
+        if watermark_device not in {"auto", "cuda", "cpu"}:
+            raise ValueError(f"unsupported acoustic watermark device: {watermark_device}")
+        self.watermark_device = watermark_device
+        self._wm_pool = None
+        self.batch_vocoder = bool(batch_vocoder)
+        self._stats = _AcousticStats() if _PROFILE else None
         #: Held-back tail per streaming request. Streaming can never revise what
         #: it already sent, so the overlap is retained here and blended with the
         #: next chunk's decode of the same region before being emitted.
         self._stream_state: dict[str, dict] = {}
+        self._stream_noise: dict[str, tuple[tuple, torch.Tensor]] = {}
         self.stream_crossfade_samples = int(K.ACOUSTIC_STREAM_CROSSFADE_SAMPLES)
 
     # -- weights ------------------------------------------------------------
@@ -216,17 +298,134 @@ class ChatterboxS3Gen(torch.nn.Module):
                 f"S3Gen state-dict mismatch for profile {self.checkpoint_profile!r} "
                 f"({filename}): missing={unexplained[:8]} unexpected={list(unexpected)[:8]}"
             )
+        # Legacy torch.Tensor(...) constructors in relative attention create
+        # CPU parameters even inside vLLM's CUDA device context. Move the whole
+        # acoustic module to the embedding's execution device once; otherwise
+        # every attention layer copies its position bias during every decode.
+        self.s3gen.to(device=self.s3gen.flow.input_embedding.weight.device)
+        self.s3gen.flow.decoder.estimator.to(dtype=self.estimator_dtype)
+        self.s3gen.flow.decoder.fp32_solver = self.estimator_dtype != torch.float32
+        if self.materialize_vocoder_weights:
+            from torch.nn.utils.parametrize import is_parametrized, remove_parametrizations
+            for module in list(self.s3gen.mel2wav.modules()):
+                if is_parametrized(module, "weight"):
+                    remove_parametrizations(module, "weight", leave_parametrized=True)
         logger.info(
             "Chatterbox MTL V3 S3Gen: loaded %s (profile %s), %d tensors",
             filename, self.checkpoint_profile, len(state),
         )
 
+    @torch.inference_mode()
+    def warm_compiled_estimator(self):
+        """Compile before readiness, with fresh noise still supplied per request."""
+        if not self.compile_estimator:
+            return
+        torch.set_float32_matmul_precision("highest")
+        self.s3gen.eval()
+        decoder = self.s3gen.flow.decoder
+        decoder.estimator = torch.compile(
+            decoder.estimator, dynamic=True, mode="max-autotune-no-cudagraphs",
+        )
+        device = self.s3gen.flow.input_embedding.weight.device
+        dtype = self.estimator_dtype
+        z = torch.zeros((2, 80, 504), device=device, dtype=dtype)
+        decoder.estimator.forward(
+            x=z, mask=torch.ones((2, 1, 504), device=device, dtype=dtype),
+            mu=z.clone(), t=torch.zeros(2, device=device, dtype=dtype),
+            spks=torch.zeros((2, 80), device=device, dtype=dtype), cond=z.clone(), r=None,
+        )
+        torch.cuda.synchronize(device)
+        logger.info("Chatterbox compiled acoustic estimator warmed: %s", self.estimator_dtype)
+        self.warm_acoustic_graphs()
+
+    @torch.inference_mode()
+    def warm_acoustic_graphs(self):
+        """Capture configured reference geometries before admitting traffic.
+
+        All static tensors are overwritten on replay. No voice, noise bank or
+        request metadata from this synthetic warmup is retained as input.
+        """
+        if not self.flow_cudagraphs or not self.prewarm_prompt_tokens:
+            return
+        device = self.s3gen.flow.input_embedding.weight.device
+        # Warm the rungs THIS deploy's ladder actually decodes at, not a fixed
+        # list: a shape that is not captured here is captured during the first
+        # requests that hit it, and a cold server measures materially worse than
+        # a warm one (20 callers, same profile: p95 buffered stall 1.184 s cold
+        # against 0.588 s warm). The ladder is the same one stage 0 transports
+        # on, so these are exactly the lengths that will arrive.
+        rungs, cum, block = [], 0, K.ACOUSTIC_STREAM_FIRST_BLOCK
+        while cum < 4 * K.ACOUSTIC_STREAM_MAX_BLOCK and len(rungs) < 12:
+            cum += block
+            rungs.append(cum)
+            block = min(int(block * K.ACOUSTIC_STREAM_BLOCK_GROWTH),
+                        K.ACOUSTIC_STREAM_MAX_BLOCK)
+        for prompt in self.prewarm_prompt_tokens:
+            if prompt <= 0:
+                raise ValueError("prewarm prompt lengths must be positive")
+            for rows in (1, 2, 3, 4):
+                for codes in rungs:
+                    if codes > self.graph_max_codes:
+                        continue
+                    length = prompt + codes
+                    frames = (length - K.ACOUSTIC_PRE_LOOKAHEAD_LEN) * K.S3GEN_TOKEN_MEL_RATIO
+                    self._run_acoustic_core(
+                        torch.zeros((rows, length), dtype=torch.long, device=device),
+                        torch.full((rows,), length, dtype=torch.long, device=device),
+                        torch.zeros((rows, self.s3gen.flow.spk_embed_affine_layer.in_features), device=device),
+                        torch.zeros((rows, K.S3GEN_N_MELS, frames), device=device),
+                        torch.zeros((rows, K.S3GEN_N_MELS, frames), device=device),
+                        torch.ones((rows, 1, frames), device=device), cacheable=True,
+                    )
+        torch.cuda.synchronize(device)
+        logger.info("Chatterbox acoustic graphs ready before admission: %d", len(self._flow_graphs))
+
+    def _run_vocoder(self, mel, generator, *, cacheable=False):
+        if not self.vocoder_cudagraphs:
+            return self.s3gen.hift_inference(mel, None, generator=generator)[0]
+        v = self.s3gen.mel2wav
+        f0 = v.f0_predictor(mel)
+        source = v.f0_upsamp(f0[:, None]).transpose(1, 2)
+        source, _, _ = v.m_source(source, generator)
+        real, imaginary = v._stft(source.transpose(1, 2).squeeze(1))
+        spectrum = torch.cat([real, imaginary], dim=1)
+        def run(values):
+            return torch.stack(v.decode_spectral(*values))
+        magnitude, phase = self._run_graph((mel, spectrum), run,
+                                           cacheable=cacheable, namespace="vocoder")
+        return v._istft(magnitude, phase).clamp(-v.audio_limit, v.audio_limit)
+
     # -- watermark ----------------------------------------------------------
+    def _watermark_run_device(self) -> str:
+        """Where Perth's DSP runs. Not a quality knob -- see below."""
+        want = self.watermark_device
+        if want == "auto":
+            want = "cuda" if torch.cuda.is_available() else "cpu"
+        if want == "cuda" and not torch.cuda.is_available():
+            return "cpu"
+        return want
+
     def _get_watermarker(self):
         if self._watermarker is None:
             import perth
 
-            self._watermarker = perth.PerthImplicitWatermarker()
+            device = self._watermark_run_device()
+            # Perth defaults to CPU, and at 40-140 ms per emitted chunk that
+            # single-threaded DSP -- not the flow solver -- was the ceiling on
+            # sustained streaming throughput: it runs inside the stage-1
+            # forward, so the GPU idles for its whole duration on every chunk
+            # of every stream. Everything after the resample is plain torch
+            # (an STFT pair around a 2.4 M-parameter conv encoder), so it runs
+            # on the acoustic device unchanged.
+            #
+            # This is a placement change, not a model change. The watermark is
+            # the same network with the same weights, the resampler that
+            # defines the signal band stays on CPU (librosa/soxr, bit-identical),
+            # and measured against the CPU run the output differs by at most
+            # 7e-6 -- about 1e-4 of the watermark's own perturbation of the
+            # waveform, and far below this port's accepted acoustic variation.
+            self._watermarker = perth.PerthImplicitWatermarker(device=device)
+            logger.info("Chatterbox Perth watermarker running on %s", device)
         return self._watermarker
 
     def watermark(self, audio: np.ndarray) -> np.ndarray:
@@ -234,6 +433,60 @@ class ChatterboxS3Gen(torch.nn.Module):
         if not self.apply_watermark:
             return audio
         return self._get_watermarker().apply_watermark(audio, sample_rate=K.S3GEN_SR)
+
+    @staticmethod
+    def _watermarkable(audio: np.ndarray) -> bool:
+        # An emitted chunk can legitimately be empty -- the crossfade holdback
+        # can consume a short chunk entirely, and a resumed stream re-decodes a
+        # region it has already sent. Perth's STFT reshapes to (-1, n) and dies
+        # on a zero-length signal, so an empty chunk is passed through unmarked
+        # rather than taking the acoustic engine down. There is no audio in it
+        # to mark.
+        return audio.size > 0
+
+    def _watermark_one(self, audio: np.ndarray) -> np.ndarray:
+        if not self._watermarkable(audio):
+            return audio
+        # Workers run outside the caller's `inference_mode` region (the mode is
+        # thread-local), so re-enter it here: that is the context the serial
+        # path ran under, and it keeps autograd off the watermark encoder.
+        with torch.inference_mode():
+            return self._get_watermarker().apply_watermark(audio, sample_rate=K.S3GEN_SR)
+
+    def watermark_many(self, audios: list[np.ndarray]) -> list[np.ndarray]:
+        """Watermark a decode batch's rows concurrently.
+
+        Perth is a CPU model (a 2.4 M-parameter encoder around an STFT pair) and
+        costs 40-140 ms per row, which is comparable to the whole GPU acoustic
+        decode. Run serially inside the stage-1 forward -- which is where the
+        reference loop put it -- it leaves the GPU idle for rows x 40-140 ms on
+        every batch, and that, not the flow solver, is what caps sustained
+        streaming throughput.
+
+        Each row is still passed through the *same* `apply_watermark` call with
+        the same input, so this is a scheduling change, not a numerical one: the
+        outputs are bit-identical to the serial path (`torch` releases the GIL
+        in these kernels, so the threads genuinely overlap).
+        """
+        if not self.apply_watermark or not audios:
+            return audios
+        if len(audios) == 1:
+            return [self._watermark_one(audios[0])]
+        self._get_watermarker()  # build/warm once, never inside a worker
+        if self._watermark_run_device() != "cpu":
+            # On the acoustic device a row costs 2-5 ms and the rows already
+            # serialise on that device; threads would only add contention.
+            return [self._watermark_one(a) for a in audios]
+        return list(self._watermark_pool().map(self._watermark_one, audios))
+
+    def _watermark_pool(self) -> "ThreadPoolExecutor":
+        if self._wm_pool is None:
+            from concurrent.futures import ThreadPoolExecutor
+
+            self._wm_pool = ThreadPoolExecutor(
+                max_workers=self.watermark_workers, thread_name_prefix="cbx-perth"
+            )
+        return self._wm_pool
 
     # -- decode -------------------------------------------------------------
     def group_batches(self, requests: list[AcousticRequest]) -> list[list[int]]:
@@ -268,12 +521,21 @@ class ChatterboxS3Gen(torch.nn.Module):
           butt-joining two decodes would step; blending them does not, and it
           costs one crossfade of added latency rather than a rewrite of audio
           the caller already has.
+
+        ``committed``/``cut``/``available`` are ABSOLUTE PCM sample coordinates
+        for the whole utterance. When ``req.token_offset`` is non-zero the
+        bounded-window decode only rendered codes ``[token_offset:]``, so
+        ``audio`` starts at absolute sample ``base``; every index into it is
+        shifted by ``base``. ``token_offset == 0`` (window disabled, or the
+        finalize chunk) makes ``base == 0`` and this identical to the original.
         """
+        base = int(getattr(req, "token_offset", 0)) * K.SAMPLES_PER_CODEC_TOKEN
         state = self._stream_state.get(req.request_id)
         committed = int(state["committed"]) if state else 0
         tail: torch.Tensor | None = state.get("tail") if state else None
         xf = int(self.stream_crossfade_samples)
-        available = int(audio.shape[0])
+        local_len = int(audio.shape[0])
+        available = base + local_len
         cut = available if req.finalize else available - xf
 
         if cut <= committed:
@@ -282,23 +544,37 @@ class ChatterboxS3Gen(torch.nn.Module):
                 return audio.new_zeros(0)
             cut = available
 
+        if base > committed:
+            # The window must cover everything already emitted; otherwise the
+            # samples in (committed, base) were never rendered and the stream
+            # would have a gap. Widen ACOUSTIC_STREAM_CTX_WINDOW or lower the
+            # block growth so consecutive windows overlap.
+            raise AcousticError(
+                f"{req.request_id}: streaming context window starts at sample "
+                f"{base} but {committed} samples are already committed"
+            )
+
         if tail is None:
-            out = audio[:cut]
+            out = audio[: cut - base]
         else:
             n = min(xf, max(0, cut - committed), max(0, available - committed))
             if n <= 0:
-                out = audio[committed:cut]
+                out = audio[committed - base : cut - base]
             else:
                 ramp = torch.linspace(0.0, 1.0, n, device=audio.device, dtype=audio.dtype)
-                blend = tail[:n] * (1.0 - ramp) + audio[committed : committed + n] * ramp
-                out = torch.cat([blend, audio[committed + n : cut]])
+                blend = (
+                    tail[:n] * (1.0 - ramp)
+                    + audio[committed - base : committed - base + n] * ramp
+                )
+                out = torch.cat([blend, audio[committed - base + n : cut - base]])
 
         if req.finalize:
             self._stream_state.pop(req.request_id, None)
+            self._stream_noise.pop(req.request_id, None)
         else:
             self._stream_state[req.request_id] = {
                 "committed": cut,
-                "tail": audio[cut:available].clone(),
+                "tail": audio[cut - base : available - base].clone(),
             }
         return out
 
@@ -306,9 +582,10 @@ class ChatterboxS3Gen(torch.nn.Module):
         """Drop held-back streaming tails for finished or cancelled requests."""
         for rid in request_ids:
             self._stream_state.pop(str(rid), None)
+            self._stream_noise.pop(str(rid), None)
 
     def _flow_noise(
-        self, req: AcousticRequest, mel_len: int, device, dtype
+        self, req: AcousticRequest, mel_len: int, device, dtype, *, prompt_mel: int = 0
     ) -> torch.Tensor:
         """Flow noise for one row, drawn from a FIXED per-request bank.
 
@@ -320,6 +597,12 @@ class ChatterboxS3Gen(torch.nn.Module):
         j's noise independent of how much has been generated so far, which is
         what ``CausalConditionalCFM.rand_noise`` does upstream (it is ``None``
         in this checkpoint, so the port supplies it).
+
+        With a bounded context window (``req.token_offset > 0``) the decoded
+        sequence is ``[prompt] + codes[token_offset:]``: the prompt keeps bank
+        positions ``[0:prompt_mel]`` but the generated region must read from the
+        ABSOLUTE bank offset for its first code, so generated code j still gets
+        ``bank[:, prompt_mel + j*ratio]`` regardless of where the window starts.
         """
         gen = request_generator(device, derive_seed(req.request_id, req.seed, "flow"))
         if not req.streaming:
@@ -329,9 +612,131 @@ class ChatterboxS3Gen(torch.nn.Module):
             return torch.randn(
                 (K.S3GEN_N_MELS, mel_len), generator=gen, device=device, dtype=dtype
             )
-        cap = max(int(mel_len), int(K.MAX_SPEECH_TOKENS) * K.S3GEN_TOKEN_MEL_RATIO)
-        bank = torch.randn((K.S3GEN_N_MELS, cap), generator=gen, device=device, dtype=dtype)
-        return bank[:, :mel_len]
+        ratio = K.S3GEN_TOKEN_MEL_RATIO
+        token_offset = int(getattr(req, "token_offset", 0))
+        # Quantise the bank size so a growing window never changes ``identity``
+        # and forces a redraw (which would break noise continuity mid-stream).
+        unit = int(K.MAX_SPEECH_TOKENS) * ratio
+        need = int(mel_len) + token_offset * ratio
+        cap = ((max(0, need - 1) // unit) + 1) * unit
+        identity = (req.seed, cap, device, dtype)
+        cached = self._stream_noise.get(req.request_id)
+        bank = None
+        if cached is not None and cached[0] == identity:
+            bank = cached[1]
+        if bank is None:
+            bank = torch.randn((K.S3GEN_N_MELS, cap), generator=gen, device=device, dtype=dtype)
+            self._stream_noise[req.request_id] = (identity, bank)
+        if token_offset == 0:
+            return bank[:, :mel_len]
+        gen_off = int(prompt_mel) + token_offset * ratio
+        gen_len = int(mel_len) - int(prompt_mel)
+        return torch.cat(
+            [bank[:, : int(prompt_mel)], bank[:, gen_off : gen_off + gen_len]], dim=1
+        )
+
+    def _phase_timer(self):
+        """Return a `mark(phase)` that attributes elapsed time to that phase.
+
+        A no-op unless CBX_ACOUSTIC_PROFILE is set. When on it synchronises the
+        device so GPU phases are not credited to whichever CPU phase happens to
+        touch the result first -- accurate, but not free.
+        """
+        stats = self._stats
+        if stats is None:
+            return lambda _phase: None
+
+        import time as _t
+
+        last = [_t.perf_counter()]
+
+        def mark(phase: str) -> None:
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            now = _t.perf_counter()
+            stats.phases[phase] = stats.phases.get(phase, 0.0) + (now - last[0])
+            last[0] = now
+
+        return mark
+
+    def _run_graph(self, args, run, *, cacheable=False, namespace="flow"):
+        """Replay an exact-shape tensor computation with fresh request inputs.
+
+        No padding or request metadata is captured. Only recurrent streaming
+        rungs are cached, with a hard cap; arbitrary final lengths stay eager.
+        The shared pool is safe because this runner executes serially and the
+        result is cloned before any other graph can reuse its storage.
+        """
+        mu = args[0]
+        if not (self.flow_cudagraphs and mu.is_cuda and cacheable):
+            return run(args)
+        key = (namespace, self.cfm_timesteps, tuple((tuple(t.shape), t.dtype, t.device) for t in args))
+        cached = self._flow_graphs.get(key)
+        if cached is None:
+            if len(self._flow_graphs) >= getattr(self, "graph_cache_size", 16):
+                # Cache full: this shape runs eager for the rest of the process.
+                # Counted, because a cache too small for the shapes the ladder
+                # actually produces silently turns graph replay off under load.
+                if self._stats is not None:
+                    if namespace == "flow":
+                        self._stats.eager_flow += 1
+                    else:
+                        self._stats.eager_voc += 1
+                return run(args)
+            static = tuple(t.clone().contiguous() for t in args)
+            current = torch.cuda.current_stream(mu.device)
+            capture_stream = torch.cuda.Stream(device=mu.device)
+            capture_stream.wait_stream(current)
+            with torch.cuda.stream(capture_stream):
+                for _ in range(2):
+                    run(static)
+            current.wait_stream(capture_stream)
+            graph = torch.cuda.CUDAGraph()
+            if self._flow_graph_pool is None:
+                self._flow_graph_pool = torch.cuda.graph_pool_handle()
+            with torch.cuda.graph(graph, pool=self._flow_graph_pool, stream=capture_stream):
+                output = run(static)
+            cached = (graph, static, output)
+            self._flow_graphs[key] = cached
+            logger.info("Chatterbox acoustic %s CUDA graph: rows=%d length=%d (%d/%d)",
+                        namespace, mu.shape[0], mu.shape[-1], len(self._flow_graphs),
+                        getattr(self, "graph_cache_size", 16))
+        graph, static, output = cached
+        for dst, src in zip(static, args):
+            dst.copy_(src)
+        graph.replay()
+        return output.clone()
+
+    def _run_flow(self, mu, mask, embedding, conds, noise, *, cacheable=False):
+        def run(values):
+            m, mask_, speaker, cond, z = values
+            return self.s3gen.flow.decoder(
+                mu=m, mask=mask_, spks=speaker, cond=cond,
+                n_timesteps=self.cfm_timesteps, noise=z,
+            )[0]
+        return self._run_graph((mu, mask, embedding, conds, noise), run,
+                               cacheable=cacheable)
+
+    def _run_acoustic_core(self, tokens, token_lens, embedding, conds, noise,
+                           mel_mask, *, cacheable=False):
+        """Capture token encoder and flow together; reference geometry stays outside."""
+        from vllm_omni.model_executor.models.chatterbox_mtl_v3.vendor.s3gen.utils.mask import make_pad_mask
+        flow = self.s3gen.flow
+        def run(values):
+            tok, lengths, speaker, cond, z, mask_mel = values
+            speaker = torch.nn.functional.normalize(speaker, dim=1)
+            speaker = flow.spk_embed_affine_layer(speaker)
+            mask = (~make_pad_mask(lengths, tok.shape[1])).unsqueeze(-1).to(speaker)
+            embedded = flow.input_embedding(tok) * mask
+            h, _ = flow.encoder(embedded, lengths)
+            h = flow.encoder_proj(h)[:, :z.shape[-1]]
+            return flow.decoder(
+                mu=h.transpose(1, 2).contiguous(), mask=mask_mel,
+                spks=speaker, cond=cond, noise=z,
+                n_timesteps=self.cfm_timesteps,
+            )[0]
+        return self._run_graph((tokens, token_lens, embedding, conds, noise, mel_mask),
+                               run, cacheable=cacheable, namespace="encoder_flow")
 
     def decode_batch(self, requests: list[AcousticRequest]) -> list[AcousticResult]:
         """Decode one compatible group in a single flow-solver pass.
@@ -382,7 +787,7 @@ class ChatterboxS3Gen(torch.nn.Module):
         for req in requests:
             cond = req.conditioning.to(device)
             prompt_token = cond.prompt_token.reshape(1, -1).to(torch.long)
-            declared = int(cond.prompt_token_len.reshape(-1)[0].item())
+            declared = cond.acoustic_prompt_length()
             declared = max(0, min(declared, int(prompt_token.shape[1])))
             prompt_feat = cond.prompt_feat.reshape(1, -1, n_mels)
             if prompt_feat.shape[1] < declared * ratio:
@@ -433,63 +838,90 @@ class ChatterboxS3Gen(torch.nn.Module):
         embedding = torch.cat(
             [c[0].embedding.reshape(1, -1).to(device=device, dtype=dtype) for c in conds_list], dim=0
         )
-        embedding = torch.nn.functional.normalize(embedding, dim=1)
-        embedding = flow.spk_embed_affine_layer(embedding)
-
-        # --- token encoder ----------------------------------------------------
-        from vllm_omni.model_executor.models.chatterbox_mtl_v3.vendor.s3gen.utils.mask import (
-            make_pad_mask,
-        )
-
-        mask = (~make_pad_mask(token_lens)).unsqueeze(-1).to(embedding)
-        embedded = flow.input_embedding(tokens) * mask
-        h, h_masks = flow.encoder(embedded, token_lens)
-        h = flow.encoder_proj(h)
-        if h.shape[1] < max_mel:
-            raise AcousticError(
-                f"token encoder produced {h.shape[1]} mel frames, expected at least {max_mel}"
-            )
-        h = h[:, :max_mel]
+        from vllm_omni.model_executor.models.chatterbox_mtl_v3.vendor.s3gen.utils.mask import make_pad_mask
 
         # --- per-row prompt mel at its OWN offset -----------------------------
-        conds = torch.zeros((rows, max_mel, n_mels), device=device, dtype=h.dtype)
+        conds = torch.zeros((rows, max_mel, n_mels), device=device, dtype=dtype)
         for i, (_, _, prompt_feat) in enumerate(conds_list):
-            conds[i, : prompt_lens[i] * ratio] = prompt_feat[0].to(dtype=h.dtype)
+            conds[i, : prompt_lens[i] * ratio] = prompt_feat[0].to(dtype=dtype)
         conds = conds.transpose(1, 2)
 
         mel_mask = (
             ~make_pad_mask(torch.tensor(mel_lens, dtype=torch.long, device=device), max_len=max_mel)
-        ).unsqueeze(1).to(h)
+        ).unsqueeze(1).to(device=device, dtype=dtype)
 
         # --- per-row noise, drawn at the length the row would use ALONE -------
-        mu = h.transpose(1, 2).contiguous()
-        noise = torch.zeros_like(mu)
+        noise = torch.zeros((rows, n_mels, max_mel), device=device, dtype=dtype)
         for i, req in enumerate(requests):
             noise[i, :, : mel_lens[i]] = self._flow_noise(
-                req, mel_lens[i], device, mu.dtype
+                req, mel_lens[i], device, dtype, prompt_mel=prompt_lens[i] * ratio
             )
 
-        feat = flow.decoder(
-            mu=mu,
-            mask=mel_mask,
-            spks=embedding,
-            cond=conds,
-            n_timesteps=self.cfm_timesteps,
-            noise=noise,
-        )[0]
+        _mark = self._phase_timer()
+        _mark("setup")
+        feat = self._run_acoustic_core(
+            tokens, token_lens, embedding, conds, noise, mel_mask,
+            cacheable=(not finalize and bool(requests[0].streaming)
+                       and max(code_lens) <= self.graph_max_codes and rows <= 4),
+        )
+
+        _mark("flow")
 
         # --- per-row output: cut at this row's own prompt offset --------------
         results: list[AcousticResult] = []
+        row_audio: list[torch.Tensor] = []
+        row_marked: list[bool] = []
+        row_codes: list[int] = []
         fade = self.s3gen.trim_fade.to(device=device)
-        for i, req in enumerate(requests):
-            start_mel = prompt_lens[i] * ratio
-            row_mel = feat[i : i + 1, :, start_mel : start_mel + emit_code_lens[i] * ratio]
-            row_mel = row_mel.to(dtype=dtype)
+        # --- vocoder ---------------------------------------------------------
+        # Every row in a group shares its code length AND its prompt length --
+        # both are part of ``batch_key`` -- so all rows' mel slices have the
+        # same offset and width, and the vocoder can run once for the batch
+        # instead of once per row. The flow solver was already batched; leaving
+        # the vocoder in a Python loop meant the second half of the acoustic
+        # stage was serialised over the group, which is what the batching was
+        # meant to remove.
+        #
+        # The per-row RNG is preserved exactly: ``_draw`` accepts one generator
+        # per row and draws that row's noise at the row's own shape, taking the
+        # same values in the same order from the same stream as the solo call.
+        voc_gens = [
+            request_generator(device, derive_seed(req.request_id, req.seed, "vocoder"))
+            for req in requests
+        ]
+        # `ragged_batching` (opt-in, and measurably unsafe on this checkpoint)
+        # packs unequal lengths, so the shared slice below would not hold. Check
+        # the geometry rather than trusting the batch key.
+        uniform_geometry = (
+            len(set(prompt_lens)) == 1 and len(set(emit_code_lens)) == 1
+        )
+        batched_wavs = None
+        if self.batch_vocoder and rows > 1 and uniform_geometry:
+            start_mel = prompt_lens[0] * ratio
+            width = emit_code_lens[0] * ratio
+            batch_mel = feat[:, :, start_mel : start_mel + width].to(dtype=dtype)
+            batched_wavs = self._run_vocoder(
+                batch_mel, voc_gens,
+                cacheable=(requests[0].streaming and not finalize
+                           and code_lens[0] <= self.graph_max_codes),
+            )
 
-            voc_gen = request_generator(device, derive_seed(req.request_id, req.seed, "vocoder"))
-            wav, _ = self.s3gen.hift_inference(row_mel, None, generator=voc_gen)
+        for i, req in enumerate(requests):
+            if batched_wavs is not None:
+                wav = batched_wavs[i : i + 1]
+            else:
+                start_mel = prompt_lens[i] * ratio
+                row_mel = feat[i : i + 1, :, start_mel : start_mel + emit_code_lens[i] * ratio]
+                row_mel = row_mel.to(dtype=dtype)
+                wav = self._run_vocoder(row_mel, voc_gens[i], cacheable=(req.streaming
+                    and not req.finalize and code_lens[i] <= self.graph_max_codes))
             wav = wav.clone()
-            wav[:, : fade.shape[0]] *= fade.to(wav.dtype)
+            # The initial trim fade belongs only to the true utterance start. A
+            # bounded-window chunk (token_offset > 0) renders a mid-utterance
+            # slice, so fading its first samples would notch audio the previous
+            # chunk already delivered cleanly.
+            if int(getattr(req, "token_offset", 0)) == 0:
+                wav[:, : fade.shape[0]] *= fade.to(wav.dtype)
 
             audio = wav[0].reshape(-1).float()
             n_codes = code_lens[i]
@@ -499,18 +931,43 @@ class ChatterboxS3Gen(torch.nn.Module):
                 audio = self._emit_stream_slice(req, audio)
             # In streaming mode every emitted chunk is watermarked, not just
             # the last one -- marking only the final chunk would ship almost the
-            # whole utterance unmarked.
-            if self.apply_watermark and (req.finalize or req.streaming):
-                marked = self.watermark(audio.cpu().numpy())
-                audio = torch.from_numpy(np.asarray(marked, dtype=np.float32)).to(audio.device)
+            # whole utterance unmarked. The rows are collected first and marked
+            # together below: the call per row is identical, but a batch's rows
+            # no longer wait on each other's CPU time with the GPU idle.
+            row_audio.append(audio)
+            row_marked.append(bool((req.finalize or req.streaming) and self.apply_watermark))
+            row_codes.append(n_codes)
+
+        _mark("vocoder")
+        marked_idx = [i for i, m in enumerate(row_marked) if m and row_audio[i].numel()]
+        for i, m in enumerate(row_marked):
+            row_marked[i] = bool(m and row_audio[i].numel())
+        if marked_idx:
+            marked = self.watermark_many([row_audio[i].cpu().numpy() for i in marked_idx])
+            for i, out in zip(marked_idx, marked):
+                row_audio[i] = torch.from_numpy(np.asarray(out, dtype=np.float32)).to(
+                    row_audio[i].device
+                )
+
+        _mark("watermark")
+
+        for i, req in enumerate(requests):
             results.append(
                 AcousticResult(
                     request_id=req.request_id,
-                    audio=audio.contiguous(),
-                    n_valid_codes=n_codes,
-                    watermarked=bool((req.finalize or req.streaming) and self.apply_watermark),
+                    audio=row_audio[i].contiguous(),
+                    n_valid_codes=row_codes[i],
+                    watermarked=row_marked[i],
                 )
             )
+        _mark("other")
+        if self._stats is not None:
+            st = self._stats
+            st.calls += 1
+            st.rows += rows
+            st.codes += sum(code_lens)
+            st.emitted_samples += sum(int(a.numel()) for a in row_audio)
+            st.maybe_log()
         return results
 
     @torch.inference_mode()

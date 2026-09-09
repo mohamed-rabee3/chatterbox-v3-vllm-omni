@@ -1,28 +1,39 @@
 #!/bin/bash
-# Conversational capacity sweep: find the highest number of concurrent CALLS
-# that still meets a time-to-first-audio budget. Each level is a fresh locust
-# run against the live server; results land in their own directory so nothing
-# overwrites anything.
-set -u
+# Locust conversation sweep. Set LOAD_WAIT_MIN=0 LOAD_WAIT_MAX=0 for
+# continuously active synthesis requests instead of conversations.
+set -euo pipefail
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 BASE=${BASE:-http://127.0.0.1:18091}
 DUR=${DUR:-3m}
-OUT=/workspace/port/artifacts/sweep
+OUT=${OUT:-$ROOT/port/artifacts/sweep}
+PYTHON=${PYTHON:-/venv/main/bin/python}
+LOCUST=${LOCUST:-/venv/main/bin/locust}
 mkdir -p "$OUT"
-for U in ${LEVELS:-8 16 30 48}; do
-  echo "=== $U concurrent conversations ==="
-  mkdir -p "$OUT/u$U"
-  LOAD_ARTIFACTS="$OUT/u$U" /venv/main/bin/locust \
-      -f /workspace/port/tools/locustfile_conversation.py --headless \
-      -u "$U" -r 4 -t "$DUR" --host "$BASE" --only-summary \
-      > "$OUT/u$U/locust.log" 2>&1
-  /venv/main/bin/python - "$U" <<'PY'
+STATUS=0
+for USERS in ${LEVELS:-1 20 30}; do
+  mkdir -p "$OUT/u$USERS"
+  if LOAD_ARTIFACTS="$OUT/u$USERS" "$LOCUST" \
+      -f "$ROOT/port/tools/locustfile_conversation.py" --headless \
+      -u "$USERS" -r "${SPAWN_RATE:-5}" -t "$DUR" \
+      --stop-timeout "${DRAIN_SECONDS:-90}" --host "$BASE" --only-summary \
+      > "$OUT/u$USERS/locust.log" 2>&1; then
+    RUN_STATUS=0
+  else
+    RUN_STATUS=$?
+    STATUS=1
+    echo "users=$USERS Locust exit=$RUN_STATUS; retaining failure results"
+  fi
+  "$PYTHON" - "$OUT/u$USERS/locust_conversation.json" <<'PY'
 import json, sys
-u = sys.argv[1]
-d = json.load(open(f"/workspace/port/artifacts/sweep/u{u}/locust_conversation.json"))
-t = d["ttfa_s"]
-print(f"  users={u:>3} turns={d['turns_completed']:>4} fail={d['failures']:>3} "
-      f"TTFA p50={t['p50']:6.2f}s p95={t['p95']:6.2f}s p99={t['p99']:6.2f}s  "
-      f"turns/s={d['turns_per_s']:.2f}  audio_s/s={d['audio_s_per_wall_s']:.2f}")
+with open(sys.argv[1]) as f:
+    d = json.load(f)
+t = d['ttfa_s']
+print(f"users={d['users']} active_peak={d['peak_inflight_requests']} "
+      f"completed={d['turns_completed']} failures={d['failures']} "
+      f"unfinished={d['requests_unfinished']} "
+      f"TTFA p50={t['p50']:.3f}s p95={t['p95']:.3f}s "
+      f"playback_stall_p95={d['playback_stall_s_p95']:.3f}s "
+      f"turns/s={d['turns_per_s']:.2f}")
 PY
 done
-echo SWEEP_DONE
+exit "$STATUS"

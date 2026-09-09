@@ -302,6 +302,10 @@ class ChatterboxMTLV3Adapter(ARTTSAdapter):
         p.repetition_penalty = 1.0
         p.max_tokens = int(request.max_new_tokens or self.config.max_new_speech_tokens)
         p.detokenize = False
+        # The text-tokenizer wrapper's [STOP] is id 0, a VALID codec id.
+        # Only the speech vocabulary's EOS may terminate speech generation.
+        p.ignore_eos = True
+        p.stop_token_ids = [K.STOP_SPEECH_TOKEN]
         if request.seed is not None:
             p.seed = int(request.seed)
 

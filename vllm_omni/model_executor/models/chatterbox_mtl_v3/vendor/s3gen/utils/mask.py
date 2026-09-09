@@ -158,10 +158,11 @@ def add_optional_chunk_mask(xs: torch.Tensor,
     else:
         chunk_masks = masks
     assert chunk_masks.dtype == torch.bool
-    if (chunk_masks.sum(dim=-1) == 0).sum().item() != 0:
-        logging.warning('get chunk_masks all false at some timestep, force set to true, make sure they are masked in futuer computation!')
-        chunk_masks[chunk_masks.sum(dim=-1)==0] = True
-    return chunk_masks
+    # PORT: preserve the all-masked-row repair without a GPU -> CPU sync
+    # inside every flow block and ODE step. Dense broadcasting also permits
+    # exact-shape CUDA graph replay (boolean indexing does not).
+    return chunk_masks | ~chunk_masks.any(dim=-1, keepdim=True)
+
 
 
 def make_pad_mask(lengths: torch.Tensor, max_len: int = 0) -> torch.Tensor:

@@ -459,7 +459,13 @@ class HiFTGenerator(nn.Module):
     def decode(self, x: torch.Tensor, s: torch.Tensor = torch.zeros(1, 1, 0)) -> torch.Tensor:
         s_stft_real, s_stft_imag = self._stft(s.squeeze(1))
         s_stft = torch.cat([s_stft_real, s_stft_imag], dim=1)
+        magnitude, phase = self.decode_spectral(x, s_stft)
+        x = self._istft(magnitude, phase)
+        return torch.clamp(x, -self.audio_limit, self.audio_limit)
 
+    # PORT: tensor-only convolution path; stochastic excitation and FFTs stay
+    # outside CUDA capture so each replay uses the current request's source.
+    def decode_spectral(self, x: torch.Tensor, s_stft: torch.Tensor):
         x = self.conv_pre(x)
         for i in range(self.num_upsamples):
             x = F.leaky_relu(x, self.lrelu_slope)
@@ -486,9 +492,7 @@ class HiFTGenerator(nn.Module):
         magnitude = torch.exp(x[:, :self.istft_params["n_fft"] // 2 + 1, :])
         phase = torch.sin(x[:, self.istft_params["n_fft"] // 2 + 1:, :])  # actually, sin is redundancy
 
-        x = self._istft(magnitude, phase)
-        x = torch.clamp(x, -self.audio_limit, self.audio_limit)
-        return x
+        return magnitude, phase
 
     def forward(
             self,

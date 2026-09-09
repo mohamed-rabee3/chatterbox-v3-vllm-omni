@@ -1,0 +1,120 @@
+# Real-time voice-agent profile: 20 concurrent conversations on one RTX 5090.
+#
+# Quality is held at the qualified streaming settings -- FP32 throughout, four
+# flow-matching steps, the reference Perth watermark on every emitted chunk.
+# The throughput comes from removing serialization, not from cheaper acoustics:
+#
+#   * the Perth watermark is a CPU torch model that cost 40-140 ms PER ROW inside
+#     the stage-1 forward, idling the GPU for the whole batch. Its DSP now runs
+#     on the acoustic device (`acoustic_watermark_device`); the resampler that
+#     defines the signal band still runs on the CPU, and the waveform changes by
+#     ~1e-4 of the watermark's own perturbation. It fell to 3% of stage-1 time.
+#   * the vocoder ran per row while the flow solver was already batched
+#     (`acoustic_batch_vocoder`). Rows in a group share code and prompt length,
+#     and `_draw` takes one generator per row, so each row's RNG stream is
+#     unchanged.
+#   * the chunk ladder (connector `codec_chunk_*` below) makes fewer, LARGER
+#     decodes. Every chunk re-renders the 250-code reference prompt, so cost
+#     tracks the number of decodes, not their length -- and a larger chunk is
+#     rendered with more context, so this measurably improves speaker similarity
+#     rather than costing it. The first block is 10 rather than 5 because the
+#     encoder's 3-code lookahead is subtracted from it: at 5 the first chunk
+#     emits 60 ms of audio and the client starves before chunk 2 arrives.
+#
+# The ladder must match in both stage processes; `serve.sh` and the supervisor
+# wrapper both derive it from the connector block below, which is the source of
+# truth. `acoustic_prewarm_prompt_tokens` matters: without it the graph shapes
+# are captured during live traffic and a cold server measures about twice the
+# playback stall of a warm one.
+#
+# Measurements, rejected experiments and remaining limits:
+#   port/artifacts/latency/final/README.md
+connectors:
+  connector_of_shared_memory:
+    name: SharedMemoryConnector
+    extra:
+      shm_threshold_bytes: 65536
+      codec_streaming: true
+      connector_get_sleep_s: 0.01
+      connector_get_max_wait_first_chunk: 3000
+      connector_get_max_wait: 300
+      codec_chunk_frames: 10
+      codec_chunk_growth: 2.5
+      codec_max_chunk_frames: 300
+      codec_pre_lookahead_frames: 3
+async_chunk: true
+stages:
+- stage_id: 0
+  dtype: float32
+  max_num_batched_tokens: 8192
+  max_num_seqs: 64
+  gpu_memory_utilization: 0.2
+  enable_chunked_prefill: false
+  enforce_eager: false
+  compilation_config:
+    mode: 3
+    cudagraph_mode: PIECEWISE
+    cudagraph_capture_sizes:
+    - 2
+    - 4
+    - 8
+    - 16
+    - 24
+    - 32
+    - 48
+    - 64
+    cudagraph_copy_inputs: true
+  trust_remote_code: true
+  enable_prefix_caching: false
+  max_model_len: 4096
+  devices: '0'
+  logits_processors:
+  - vllm_omni.model_executor.models.chatterbox_mtl_v3.sampling:ChatterboxCFGLogitsProcessor
+  output_connectors:
+    to_stage_1: connector_of_shared_memory
+  default_sampling_params:
+    max_tokens: 1000
+    temperature: 0.8
+    top_p: 1.0
+    min_p: 0.05
+    repetition_penalty: 1.0
+    extra_args:
+      cfg_role: cond
+      cfg_scale: 1.5
+  disable_hybrid_kv_cache_manager: true
+  mm_processor_cache_gb: 0
+  skip_mm_profiling: true
+- stage_id: 1
+  dtype: float32
+  max_num_batched_tokens: 32768
+  max_num_seqs: 32
+  gpu_memory_utilization: 0.4
+  enforce_eager: true
+  trust_remote_code: true
+  enable_prefix_caching: false
+  max_model_len: 4096
+  devices: '0'
+  default_sampling_params:
+    max_tokens: 1
+  input_connectors:
+    from_stage_0: connector_of_shared_memory
+  hf_overrides:
+    acoustic_cfm_timesteps: 4
+    acoustic_stream_ctx_window: 400
+    acoustic_flow_cudagraphs: true
+    acoustic_compile_estimator: true
+    acoustic_max_batch_rows: 32
+    acoustic_watermark_workers: 16
+    acoustic_watermark_device: auto
+    acoustic_batch_vocoder: true
+    acoustic_continuation_batch_size: 8
+    acoustic_fresh_batch_size: 8
+    acoustic_graph_cache_size: 96
+    acoustic_graph_max_codes: 75
+    # 250 codes = the 10 s reference window (DEC_COND_SECONDS x 25/s), which is
+    # the prompt length every reference clip of 10 s or more produces.
+    acoustic_prewarm_prompt_tokens: [250]
+    acoustic_materialize_vocoder_weights: true
+    acoustic_vocoder_cudagraphs: true
+  disable_hybrid_kv_cache_manager: true
+  skip_mm_profiling: true

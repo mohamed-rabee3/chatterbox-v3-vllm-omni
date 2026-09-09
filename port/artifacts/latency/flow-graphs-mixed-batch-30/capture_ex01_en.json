@@ -1,0 +1,8 @@
+{
+  "voice": "ex01",
+  "language": "en",
+  "text": "Good morning, you have reached the customer care line. What can I do for you?",
+  "sample_rate": 24000,
+  "dtype": "int16",
+  "ttfa_s": 2.16793021094054
+}

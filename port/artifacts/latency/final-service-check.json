@@ -1,0 +1,21 @@
+{
+  "health_status": 200,
+  "kind": "serial functional check and reference warmup, not a load test",
+  "streams": [
+    {
+      "voice": "en_ex01.wav",
+      "pcm_bytes": 111360,
+      "ttfa_s": 1.15
+    },
+    {
+      "voice": "en_ex02.wav",
+      "pcm_bytes": 126720,
+      "ttfa_s": 0.314
+    },
+    {
+      "voice": "en_spk1272.wav",
+      "pcm_bytes": 115200,
+      "ttfa_s": 0.346
+    }
+  ]
+}

@@ -297,6 +297,10 @@ class ChatterboxMTLV3T3(nn.Module, SupportsMultiModal):
     supports_multimodal = True
     supports_multimodal_raw_input_only = True
     requires_raw_input_tokens = True
+    # Stage transport consumes codec IDs and reference features, never T3
+    # hidden states. Avoid per-token host copies of an unused hidden payload.
+    requires_full_prefix_cached_hidden_states = False
+    omni_pooler_payload_include_hidden = False
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
         super().__init__()
@@ -315,6 +319,15 @@ class ChatterboxMTLV3T3(nn.Module, SupportsMultiModal):
         self._stream_next_decode: dict[str, int] = {}
         self._stream_block: dict[str, int] = {}
         self._stream_cond: dict[str, ReferenceConditioning] = {}
+        #: Cumulative code count at this stream's previous decode -- used to keep
+        #: the bounded context window wide enough that consecutive windows always
+        #: overlap the region already emitted.
+        self._stream_last_decode_at: dict[str, int] = {}
+        #: Bounded left-context window for the streaming re-decode, in codes.
+        #: 0 (default) = re-decode the whole prefix every chunk.
+        self._stream_ctx_window = int(
+            getattr(self.config, "acoustic_stream_ctx_window", K.ACOUSTIC_STREAM_CTX_WINDOW)
+        )
         self._batch_req_ids: list[str] = []
 
         if self.model_stage == K.T3_STAGE:
@@ -326,9 +339,24 @@ class ChatterboxMTLV3T3(nn.Module, SupportsMultiModal):
             self.s3gen = ChatterboxS3Gen(
                 checkpoint_profile=self.config.checkpoint_profile,
                 cfm_timesteps=self.config.acoustic_cfm_timesteps,
+                flow_cudagraphs=getattr(self.config, "acoustic_flow_cudagraphs", False),
+                compile_estimator=getattr(self.config, "acoustic_compile_estimator", False),
+                estimator_dtype=getattr(self.config, "acoustic_estimator_dtype", "float32"),
+                graph_cache_size=getattr(self.config, "acoustic_graph_cache_size", 16),
+                graph_max_codes=getattr(self.config, "acoustic_graph_max_codes", 75),
+                prewarm_prompt_tokens=getattr(self.config, "acoustic_prewarm_prompt_tokens", ()),
+                materialize_vocoder_weights=getattr(self.config, "acoustic_materialize_vocoder_weights", False),
+                vocoder_cudagraphs=getattr(self.config, "acoustic_vocoder_cudagraphs", False),
                 max_batch_rows=getattr(
                     self.config, "acoustic_max_batch_rows", K.ACOUSTIC_MAX_BATCH_ROWS
                 ),
+                watermark_workers=getattr(
+                    self.config, "acoustic_watermark_workers", K.ACOUSTIC_WATERMARK_WORKERS
+                ),
+                watermark_device=getattr(
+                    self.config, "acoustic_watermark_device", K.ACOUSTIC_WATERMARK_DEVICE
+                ),
+                batch_vocoder=getattr(self.config, "acoustic_batch_vocoder", False),
             )
             self.model = self.s3gen
             self.enable_update_additional_information = True
@@ -348,6 +376,16 @@ class ChatterboxMTLV3T3(nn.Module, SupportsMultiModal):
         caller's voice to another.
         """
         self._batch_req_ids = list(req_ids)
+        computed = kwargs.get("num_computed_tokens")
+        scheduled = kwargs.get("num_scheduled_tokens")
+        self._batch_positions_cpu = None
+        if self.model_stage == K.T3_STAGE and computed is not None and scheduled is not None:
+            # These are the runner's CPU scheduling arrays, before any graph
+            # execution. Derive the same absolute positions without a D2H copy.
+            self._batch_positions_cpu = [
+                p for start, count in zip(computed, scheduled)
+                for p in range(int(start), int(start) + int(count))
+            ]
         return input_ids, positions
 
     def on_requests_finished(self, finished_req_ids) -> None:
@@ -359,6 +397,7 @@ class ChatterboxMTLV3T3(nn.Module, SupportsMultiModal):
             self._stream_next_decode.pop(req_id, None)
             self._stream_block.pop(req_id, None)
             self._stream_cond.pop(req_id, None)
+            self._stream_last_decode_at.pop(req_id, None)
         # A cancelled stream leaves a held-back crossfade tail behind; drop it
         # so a barge-in cannot retain a caller's audio.
         s3gen = getattr(self, "s3gen", None)
@@ -483,10 +522,17 @@ class ChatterboxMTLV3T3(nn.Module, SupportsMultiModal):
         if not request_token_spans:
             return inputs_embeds, prefill_indices
 
-        t3 = self.t3
-        cond_len = K.COND_PREFIX_LEN
-        n_bos = K.NUM_PREFILL_BOS
-
+        # Use the runner's CPU positions for the whole scheduled batch. The old path
+        # asked the GPU four yes/no questions PER sequence and then used
+        # dynamically sized boolean gathers. At 30 CFG pairs that serialized
+        # hundreds of device synchronizations on every autoregressive step.
+        # Metadata is request-local; only embedding lookups run on the GPU.
+        host_positions = getattr(self, "_batch_positions_cpu", None)
+        if host_positions is None:
+            # Standalone tests and callers outside the model runner.
+            host_positions = positions.detach().cpu().tolist()
+        text_rows, text_positions, text_conditional = [], [], []
+        bos_rows, decode_rows, decode_positions = [], [], []
         for req_idx, (start, end) in enumerate(request_token_spans):
             if end <= start:
                 continue
@@ -498,50 +544,44 @@ class ChatterboxMTLV3T3(nn.Module, SupportsMultiModal):
                     "Chatterbox T3: request is missing prompt_len/text_len in its "
                     "additional_information; the adapter must supply them"
                 )
-            role = "cond"
+            role = str(info.get("cfg_role") or "cond")
             if extra_args and req_idx < len(extra_args):
                 role = str(extra_args[req_idx].get("cfg_role") or "cond")
-            elif info.get("cfg_role"):
-                role = str(info["cfg_role"])
-
-            pos = positions[start:end]
-            ids = input_ids[start:end].to(torch.long)
-            rows = inputs_embeds[start:end]
-
-            # A request is prefilling this step iff it is still consuming its
-            # own prompt. Multimodal reference conditioning arrives only for
-            # these, in ascending batch order.
-            if bool((pos < cond_len).any()):
+            is_prefill = False
+            for row in range(start, end):
+                pos = host_positions[row]
+                if pos < K.COND_PREFIX_LEN:
+                    is_prefill = True
+                elif pos < K.COND_PREFIX_LEN + text_len:
+                    text_rows.append(row)
+                    text_positions.append(pos - K.COND_PREFIX_LEN)
+                    text_conditional.append(role != "uncond")
+                elif pos < prompt_len:
+                    bos_rows.append(row)
+                else:
+                    decode_rows.append(row)
+                    decode_positions.append(pos - prompt_len + 1)
+            if is_prefill:
                 prefill_indices.append(req_idx)
 
-            text_hi = cond_len + text_len
-            text_mask = (pos >= cond_len) & (pos < text_hi)
-            if bool(text_mask.any()):
-                local = (pos[text_mask] - cond_len).to(torch.long)
-                content = (
-                    torch.zeros(
-                        (int(text_mask.sum()), K.HIDDEN_SIZE),
-                        device=rows.device,
-                        dtype=rows.dtype,
-                    )
-                    if role == "uncond"
-                    else t3.text_content_embedding(ids[text_mask]).to(rows.dtype)
-                )
-                rows[text_mask] = content + t3.text_position_embedding(local).to(rows.dtype)
+        device, dtype = inputs_embeds.device, inputs_embeds.dtype
+        def indices(values):
+            return torch.tensor(values, dtype=torch.long, device=device)
 
-            bos_mask = (pos >= text_hi) & (pos < prompt_len)
-            if bool(bos_mask.any()):
-                rows[bos_mask] = t3.bos_embedding().to(rows.dtype)
-
-            dec_mask = pos >= prompt_len
-            if bool(dec_mask.any()):
-                local = (pos[dec_mask] - prompt_len + 1).to(torch.long)
-                rows[dec_mask] = (
-                    t3.speech_content_embedding(ids[dec_mask])
-                    + t3.speech_position_embedding(local)
-                ).to(rows.dtype)
-
-            inputs_embeds[start:end] = rows
+        if text_rows:
+            rows = indices(text_rows)
+            content = self.t3.text_content_embedding(input_ids[rows].long()).to(dtype)
+            conditional = torch.tensor(text_conditional, device=device, dtype=torch.bool)
+            content = torch.where(conditional[:, None], content, 0.0)
+            inputs_embeds[rows] = content + self.t3.text_position_embedding(indices(text_positions)).to(dtype)
+        if bos_rows:
+            inputs_embeds[indices(bos_rows)] = self.t3.bos_embedding().to(dtype)
+        if decode_rows:
+            rows = indices(decode_rows)
+            inputs_embeds[rows] = (
+                self.t3.speech_content_embedding(input_ids[rows].long())
+                + self.t3.speech_position_embedding(indices(decode_positions))
+            ).to(dtype)
         return inputs_embeds, prefill_indices
 
     # ------------------------------------------------------------------
@@ -613,11 +653,18 @@ class ChatterboxMTLV3T3(nn.Module, SupportsMultiModal):
                 for slot, idx in enumerate(prefill_indices):
                     if idx >= len(req_ids):
                         continue
-                    self._ref_by_req[req_ids[idx]] = {
+                    reference = {
                         "speech_token": tokens[slot],
                         "speech_token_len": lens[slot] if slot < len(lens) else None,
                         "speech_feat": feats[slot] if slot < len(feats) else None,
                         "embedding": embs[slot] if slot < len(embs) else None,
+                    }
+                    # These features are constant for the entire utterance.
+                    # Stage transport is CPU-based; materialize once instead
+                    # of recopying each caller's reference on every AR token.
+                    self._ref_by_req[req_ids[idx]] = {
+                        key: value.detach().cpu() if isinstance(value, torch.Tensor) else value
+                        for key, value in reference.items()
                     }
 
         known = [self._ref_by_req.get(rid) for rid in req_ids]
@@ -666,6 +713,10 @@ class ChatterboxMTLV3T3(nn.Module, SupportsMultiModal):
         job_rows: list[int] = []
         for idx, codes in enumerate(per_request):
             raw = runtime[idx] if idx < len(runtime) and isinstance(runtime[idx], dict) else {}
+            # The scheduler attaches this transport-only flag when a stream
+            # is resumed. It is not part of the model's MetaStruct schema.
+            if isinstance(raw.get("meta"), dict) and "resumable" in raw["meta"]:
+                raw = {**raw, "meta": {k: v for k, v in raw["meta"].items() if k != "resumable"}}
             payload = to_struct(raw)
             embed = payload.embed
             meta = payload.meta
@@ -708,8 +759,8 @@ class ChatterboxMTLV3T3(nn.Module, SupportsMultiModal):
             # deliberately not made request-unique, because that would make
             # `seed` fail to reproduce a result.
             seed = int(meta.audio_seed.item()) if (meta and meta.audio_seed is not None) else 0
-            cond = None
-            if has_reference:
+            cond = self._stream_cond.get(req_id) if chunked else None
+            if cond is None and has_reference:
                 try:
                     cond = self._reference_from_payload(embed, input_ids.device, req_id)
                 except AcousticPayloadError as exc:
@@ -717,7 +768,7 @@ class ChatterboxMTLV3T3(nn.Module, SupportsMultiModal):
                     continue
                 if chunked:
                     self._stream_cond[req_id] = cond
-            elif chunked:
+            elif cond is None and chunked:
                 # Terminal marker: reuse the voice this stream has been using.
                 cond = self._stream_cond.get(req_id)
             if cond is None:
@@ -765,13 +816,27 @@ class ChatterboxMTLV3T3(nn.Module, SupportsMultiModal):
             # concurrent stream sits at a different count and NOTHING batches --
             # each decode is a batch of one, serialised at ~100 ms, which is
             # what builds the queue under load. Pinning every stream to the same
-            # ladder (10, 30, 70, 150, ...) makes concurrent first chunks
+            # ladder (5, 15, 35, 75, ...) makes concurrent first chunks
             # length-identical, so they batch. Mixed voices at equal length are
             # already gated safe (0.008-0.017% of peak), so this costs nothing
             # in quality; the codes past the scheduled point are not dropped,
             # they arrive in the next chunk (the prefix is cumulative).
-            decode_codes = prefix if is_final else prefix[:scheduled]
+            # Bounded left-context window: once the utterance is longer than the
+            # configured window, a non-final chunk re-decodes only its recent
+            # tail (still prepended with the full reference prompt) instead of
+            # the whole prefix, so per-chunk acoustic cost stops growing and
+            # equal-window rows re-batch. The window is widened when needed so it
+            # always covers the previous decode point (no emit gap). is_final
+            # always decodes the whole prefix (token_offset 0) -- the final crop,
+            # watermark and one-shot parity are unchanged.
+            window = 0
+            if not is_final and self._stream_ctx_window > 0 and scheduled > self._stream_ctx_window:
+                last_at = self._stream_last_decode_at.get(req_id, 0)
+                w_eff = max(self._stream_ctx_window, scheduled - last_at + 96)
+                window = max(0, scheduled - w_eff)
+            decode_codes = prefix if is_final else prefix[window:scheduled]
             if not is_final:
+                self._stream_last_decode_at[req_id] = scheduled
                 block = min(
                     int(self._stream_block[req_id] * K.ACOUSTIC_STREAM_BLOCK_GROWTH),
                     K.ACOUSTIC_STREAM_MAX_BLOCK,
@@ -782,7 +847,7 @@ class ChatterboxMTLV3T3(nn.Module, SupportsMultiModal):
             jobs.append(
                 AcousticRequest(
                     req_id, decode_codes, cond, seed=seed, finalize=is_final,
-                    streaming=True,
+                    streaming=True, token_offset=window,
                 )
             )
             job_rows.append(idx)
@@ -791,6 +856,7 @@ class ChatterboxMTLV3T3(nn.Module, SupportsMultiModal):
                 self._stream_next_decode.pop(req_id, None)
                 self._stream_block.pop(req_id, None)
                 self._stream_cond.pop(req_id, None)
+                self._stream_last_decode_at.pop(req_id, None)
 
         if jobs:
             for row, result in zip(job_rows, self.s3gen.decode(jobs)):
@@ -870,6 +936,7 @@ class ChatterboxMTLV3T3(nn.Module, SupportsMultiModal):
             prompt_feat=feat[:n_frames].reshape(1, n_frames, mel_dim),
             embedding=emb[:1],
             checkpoint_profile=self.config.checkpoint_profile,
+            prompt_token_count=declared,
         )
 
     # ------------------------------------------------------------------
@@ -896,6 +963,7 @@ class ChatterboxMTLV3T3(nn.Module, SupportsMultiModal):
             # relative names would report every tensor as uninitialised.
             return {f"t3.{name}" for name in loaded}
         self.s3gen.load_weights_from_dir(self.model_dir)
+        self.s3gen.warm_compiled_estimator()
         return {f"s3gen.{name}" for name, _ in self.s3gen.named_parameters()}
 
 

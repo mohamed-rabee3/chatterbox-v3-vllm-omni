@@ -43,6 +43,7 @@ CHATTERBOX_MTL_V3_PIPELINE = PipelineConfig(
                 # Speech EOS. The codec ids themselves are not text, so
                 # detokenization must stay off.
                 "stop_token_ids": [K.STOP_SPEECH_TOKEN],
+                "ignore_eos": True,
                 "detokenize": False,
             },
         ),
@@ -50,6 +51,7 @@ CHATTERBOX_MTL_V3_PIPELINE = PipelineConfig(
             stage_id=1,
             model_stage=K.S3GEN_STAGE,
             execution_type=StageExecutionType.LLM_GENERATION,
+            scheduler_cls="vllm_omni.core.sched.chatterbox_acoustic_scheduler.ChatterboxAcousticScheduler",
             input_sources=(0,),
             final_output=True,
             final_output_type="audio",

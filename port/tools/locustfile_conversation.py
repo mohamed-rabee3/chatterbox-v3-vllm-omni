@@ -18,10 +18,11 @@ TTS calls:
   drops the stream. These are counted separately and are NOT failures -- they
   are the single most common real event a live agent must survive.
 
-The headline metric is **TTFA -- time to first audio byte** -- because that, not
-total synthesis time, is what a caller experiences as the agent's silence before
-it starts talking. Total time and the realtime factor are reported alongside it,
-never in place of it.
+TTFA measures the first nonempty PCM chunk. Playback starvation is also reported:
+a fast first chunk alone does not establish real-time streaming capacity. Set
+LOAD_PACE_PLAYBACK=1 to wait for playback before the next conversational gap;
+LOAD_PLAYBACK_BUFFER_S (default 0.2) adds a modeled initial client buffer. No
+STT or LLM is called, and their latency is not included in the TTS measurements.
 
 Run:
     locust -f locustfile_conversation.py --headless -u 30 -r 2 -t 6m \
@@ -31,6 +32,7 @@ Run:
 from __future__ import annotations
 
 import base64
+import itertools
 import json
 import os
 import random
@@ -131,7 +133,10 @@ SCRIPT = {
 # Weighted turn mix for the middle of a call.
 TURN_MIX = ["ack"] * 35 + ["reply"] * 50 + ["explain"] * 15
 
-BARGE_IN_RATE = 0.05      # share of turns the caller interrupts
+BARGE_IN_RATE = float(os.environ.get("LOAD_BARGE_IN_RATE", "0.05")) #      # share of turns the caller interrupts
+PACE_PLAYBACK = os.environ.get("LOAD_PACE_PLAYBACK", "0") == "1"
+PLAYBACK_BUFFER_S = float(os.environ.get("LOAD_PLAYBACK_BUFFER_S", "0.2"))
+USER_IDS = itertools.count()
 CALL_TURNS = (6, 12)      # turns per call before the caller hangs up
 
 _REF_B64: dict[str, str] = {}
@@ -159,14 +164,19 @@ class Samples:
         self.by_class: dict[str, list[float]] = {}
         self.barge_ins = 0
         self.failures: list[str] = []
+        self.started = 0
+        self.inflight = 0
+        self.peak_inflight = 0
+        self.playback_stall_s: list[float] = []
+        self.first_chunk_s: list[float] = []
+        self.records: list[dict] = []
+        self.captured: set[tuple[str, str]] = set()
         self.t0 = 0.0
         self.t1 = 0.0
 
     def add(self, turn_class: str, ttfa: float, total: float, audio_s: float) -> None:
-        self.ttfa.append(ttfa)
         self.total.append(total)
         self.audio_s.append(audio_s)
-        self.by_class.setdefault(turn_class, []).append(ttfa)
 
 
 SAMPLES = Samples()
@@ -190,19 +200,21 @@ class ConversationUser(User):
 
     # The gap between agent turns: the human is talking and the upstream
     # ASR/LLM stages are running.
-    wait_time = between(1.5, 6.0)
+    wait_time = between(float(os.environ.get("LOAD_WAIT_MIN", "1.5")),
+                        float(os.environ.get("LOAD_WAIT_MAX", "6.0")))
 
     def on_start(self) -> None:
         self.session = requests.Session()
+        self.rng = random.Random(int(os.environ.get("LOAD_SEED", "42")) + next(USER_IDS))
         self._new_call()
 
     def on_stop(self) -> None:
         self.session.close()
 
     def _new_call(self) -> None:
-        self.voice = random.choice(list(VOICES))
-        self.language = random.choice(["en", "en", "ar", "ar", "ar"])
-        self.turns_left = random.randint(*CALL_TURNS)
+        self.voice = self.rng.choice(list(VOICES))
+        self.language = self.rng.choice(["en", "en", "ar", "ar", "ar"])
+        self.turns_left = self.rng.randint(*CALL_TURNS)
         self.turn_index = 0
 
     def _next_turn(self) -> tuple[str, str]:
@@ -212,16 +224,16 @@ class ConversationUser(User):
         elif self.turns_left <= 1:
             klass = "close"
         else:
-            klass = random.choice(TURN_MIX)
-        return klass, random.choice(script[klass])
+            klass = self.rng.choice(TURN_MIX)
+        return klass, self.rng.choice(script[klass])
 
     @task
     def agent_turn(self) -> None:
+        if self.turns_left <= 0:
+            self._new_call()
         turn_class, text = self._next_turn()
         self.turn_index += 1
         self.turns_left -= 1
-        if self.turns_left <= 0:
-            self._new_call()
 
         payload = {
             "model": MODEL_ID,
@@ -232,12 +244,21 @@ class ConversationUser(User):
             "stream": True,
             "stream_format": "audio",
         }
-        barge_in = random.random() < BARGE_IN_RATE
+        if os.environ.get("LOAD_TTS_SEED"):
+            payload["seed"] = int(os.environ["LOAD_TTS_SEED"])
+        barge_in = self.rng.random() < BARGE_IN_RATE
         url = f"{self.host}/v1/audio/speech"
 
         t0 = time.perf_counter()
         ttfa = None
+        capture_key = (self.voice, self.language)
+        capture = os.environ.get("LOAD_CAPTURE_AUDIO") == "1" and capture_key not in SAMPLES.captured
+        captured_chunks = []
         audio_bytes = 0
+        playback_stall = 0.0
+        SAMPLES.started += 1
+        SAMPLES.inflight += 1
+        SAMPLES.peak_inflight = max(SAMPLES.peak_inflight, SAMPLES.inflight)
         try:
             with self.session.post(url, json=payload, stream=True, timeout=300) as r:
                 if r.status_code != 200:
@@ -248,6 +269,11 @@ class ConversationUser(User):
                         continue
                     if ttfa is None:
                         ttfa = time.perf_counter() - t0
+                        # Include first audio even if a later chunk fails or
+                        # the user interrupts. Completion-only TTFA is biased.
+                        SAMPLES.ttfa.append(ttfa)
+                        SAMPLES.by_class.setdefault(turn_class, []).append(ttfa)
+                        SAMPLES.first_chunk_s.append(len(chunk) / (SAMPLE_RATE * BYTES_PER_SAMPLE))
                         events.request.fire(
                             request_type="TTFA", name=turn_class,
                             response_time=ttfa * 1000.0,
@@ -263,15 +289,22 @@ class ConversationUser(User):
                                 exception=None, context={},
                             )
                             return
+                    elapsed_playback = time.perf_counter() - t0 - ttfa
+                    buffered_until = audio_bytes / (SAMPLE_RATE * BYTES_PER_SAMPLE) + playback_stall
+                    playback_stall += max(0.0, elapsed_playback - buffered_until)
                     audio_bytes += len(chunk)
+                    if capture:
+                        captured_chunks.append(chunk)
         except Exception as exc:  # noqa: BLE001 - a load test must survive anything
             dt = (time.perf_counter() - t0) * 1000.0
             SAMPLES.failures.append(f"{type(exc).__name__}: {exc}")
             events.request.fire(
-                request_type="TTFA", name=turn_class, response_time=dt,
+                request_type="STREAM_ERROR", name=turn_class, response_time=dt,
                 response_length=0, exception=exc, context={},
             )
             return
+        finally:
+            SAMPLES.inflight -= 1
 
         total = time.perf_counter() - t0
         audio_s = audio_bytes / (SAMPLE_RATE * BYTES_PER_SAMPLE)
@@ -284,20 +317,58 @@ class ConversationUser(User):
             )
             return
 
+        if capture and capture_key not in SAMPLES.captured:
+            SAMPLES.captured.add(capture_key)
+            ARTIFACTS.mkdir(parents=True, exist_ok=True)
+            stem = ARTIFACTS / f"capture_{capture_key[0]}_{capture_key[1]}"
+            stem.with_suffix(".pcm").write_bytes(b"".join(captured_chunks))
+            stem.with_suffix(".json").write_text(json.dumps({
+                "voice": capture_key[0], "language": capture_key[1], "text": text,
+                "sample_rate": SAMPLE_RATE, "dtype": "int16", "ttfa_s": ttfa,
+            }, ensure_ascii=False, indent=2))
+        SAMPLES.playback_stall_s.append(playback_stall)
         SAMPLES.add(turn_class, ttfa, total, audio_s)
+        # The unbuffered cumulative stall equals the extra initial buffering
+        # needed to play this observed chunk trace without any underflow.
+        buffered_stall = max(0.0, playback_stall - PLAYBACK_BUFFER_S)
+        SAMPLES.records.append({
+            "class": turn_class, "language": self.language, "voice": self.voice,
+            "ttfa_s": ttfa, "total_s": total, "audio_s": audio_s,
+            "unbuffered_stall_s": playback_stall,
+            "buffered_stall_s": buffered_stall,
+            "playback_start_s": ttfa + PLAYBACK_BUFFER_S,
+        })
         events.request.fire(
             request_type="AUDIO", name=turn_class, response_time=total * 1000.0,
             response_length=audio_bytes, exception=None, context={},
         )
+        if PACE_PLAYBACK:
+            # TTS often finishes before the listener finishes hearing it.
+            # Start the next conversational gap only after playback ends.
+            playback_end = t0 + ttfa + PLAYBACK_BUFFER_S + audio_s + buffered_stall
+            time.sleep(max(0.0, playback_end - time.perf_counter()))
 
 
 @events.test_start.add_listener
 def _on_start(environment, **_kw) -> None:
-    global MODEL_ID
-    SAMPLES.t0 = time.perf_counter()
+    global MODEL_ID, SAMPLES, USER_IDS
+    SAMPLES = Samples()
+    USER_IDS = itertools.count()
+    random.seed(int(os.environ.get("LOAD_SEED", "42")))
     if not MODEL_ID:
         host = environment.host or "http://127.0.0.1:18091"
         MODEL_ID = requests.get(f"{host}/v1/models", timeout=30).json()["data"][0]["id"]
+    if os.environ.get("LOAD_WARMUP", "1") == "1":
+        for voice in VOICES:
+            response = requests.post(f"{environment.host}/v1/audio/speech", json={
+                "model": MODEL_ID, "input": "Hello, how can I help you today?",
+                "language": "en", "ref_audio": ref_b64(voice), "response_format": "pcm",
+                "stream": True, "stream_format": "audio", "seed": 42,
+            }, timeout=300)
+            response.raise_for_status()
+            if not response.content:
+                raise RuntimeError(f"warmup returned no audio for {voice}")
+    SAMPLES.t0 = time.perf_counter()
     print(f"[load] model={MODEL_ID} host={environment.host}")
 
 
@@ -308,9 +379,28 @@ def _on_stop(environment, **_kw) -> None:
     ttfa = SAMPLES.ttfa
     n = len(ttfa)
     report = {
-        "users": environment.runner.user_count if environment.runner else None,
+        "users": environment.parsed_options.num_users,
+        "requests_started": SAMPLES.started,
+        "requests_unfinished": SAMPLES.started - len(SAMPLES.total) - SAMPLES.barge_ins - len(SAMPLES.failures),
+        "peak_inflight_requests": SAMPLES.peak_inflight,
+        "workload_seed": os.environ.get("LOAD_SEED", "42"),
+        "tts_seed": os.environ.get("LOAD_TTS_SEED"),
+        "wait_s": [os.environ.get("LOAD_WAIT_MIN", "1.5"), os.environ.get("LOAD_WAIT_MAX", "6.0")],
+        "barge_in_rate": BARGE_IN_RATE,
+        "workload_version": 2,
+        "pace_playback": PACE_PLAYBACK,
+        "playback_buffer_s": PLAYBACK_BUFFER_S,
         "wall_s": round(wall, 1),
-        "turns_completed": n,
+        "turns_completed": len(SAMPLES.total),
+        "first_audio_observed": n,
+        "first_chunk_audio_s_p50": round(_pct(SAMPLES.first_chunk_s, 50), 3),
+        "playback_stall_s_p95": round(_pct(SAMPLES.playback_stall_s, 95), 3),
+        "buffered_playback_stall_s_p95": round(_pct([
+            max(0.0, s - PLAYBACK_BUFFER_S) for s in SAMPLES.playback_stall_s], 95), 3),
+        "buffered_turns_stalled_over_100ms_pct": round(100.0 * sum(
+            s > PLAYBACK_BUFFER_S + 0.1 for s in SAMPLES.playback_stall_s
+        ) / max(len(SAMPLES.playback_stall_s), 1), 2),
+        "playback_start_s_p95": round(_pct(ttfa, 95) + PLAYBACK_BUFFER_S, 3),
         "barge_ins": SAMPLES.barge_ins,
         "failures": len(SAMPLES.failures),
         "failure_examples": SAMPLES.failures[:5],
@@ -335,7 +425,7 @@ def _on_stop(environment, **_kw) -> None:
         },
         "audio_seconds_total": round(sum(SAMPLES.audio_s), 1),
         "audio_s_per_wall_s": round(sum(SAMPLES.audio_s) / wall, 2),
-        "turns_per_s": round(n / wall, 3),
+        "turns_per_s": round(len(SAMPLES.total) / wall, 3),
         "realtime_factor_p50": (
             round(_pct([a / t for a, t in zip(SAMPLES.audio_s, SAMPLES.total) if t > 0], 50), 2)
             if SAMPLES.total else None
@@ -344,6 +434,8 @@ def _on_stop(environment, **_kw) -> None:
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     out = ARTIFACTS / "locust_conversation.json"
     out.write_text(json.dumps(report, indent=2, ensure_ascii=False))
+    (ARTIFACTS / "completed_turns.jsonl").write_text("".join(
+        json.dumps(record) + "\n" for record in SAMPLES.records))
     print("\n===== conversational load summary =====")
     print(json.dumps(report, indent=2, ensure_ascii=False))
     print(f"wrote {out}")

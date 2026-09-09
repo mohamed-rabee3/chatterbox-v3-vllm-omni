@@ -45,18 +45,11 @@ connectors:
       # can emit nothing). 5 emits 80 ms of audio, enough to start playback,
       # and costs ~425 ms of AR wait instead of ~850 ms at 10.
       codec_chunk_frames: 5
-      # The block is multiplied by this after each chunk. A fixed block makes
-      # the cumulative re-decode cost O(n^2/B) -- x5.0 of one-shot at 225
-      # codes; doubling holds TTFA and brings it back to x2.2. Playback is
-      # safe because generation runs many times faster than realtime, so the
-      # client's buffer grows faster than the chunks lengthen.
-      # TTFA depends only on the FIRST rung, so a steeper ladder is free for
-      # latency and cuts total acoustic work: at growth 2 a ~100-code utterance
-      # decodes at 10/30/70 plus the final pass; at growth 3 it is 10/40 plus
-      # the final. Every decode removed is ~110 ms of GPU that stage 0 gets
-      # back -- and it is stage 0's inter-token latency (80-92 ms under 20-user
-      # load, ~10-15 ms idle) that actually sets TTFA when the server is busy.
-      codec_chunk_growth: 4.0
+      # Match the acoustic stage's qualified doubling ladder: cumulative
+      # prefixes 5, 15, 35, 75, ... . Previously this YAML said 4, but the
+      # connector sent one token at a time and the acoustic stage used 2.
+      # The connector now batches transfers at these exact decode boundaries.
+      codec_chunk_growth: 2.0
       codec_max_chunk_frames: 400
       # Codes withheld from each non-final chunk: the token encoder's
       # PreLookaheadLayer needs this many future codes before its output for a
@@ -81,16 +74,9 @@ stages:
     # untested for this model, and Chatterbox prompts are short enough that
     # chunking buys nothing.
     enable_chunked_prefill: false
-    # CUDA graphs MUST stay off on stage 0. Tried and measured: with
-    # `enforce_eager: false` the server produced 83 errors and 51 cancellations
-    # against 72 successes at 20-30 callers, every failure being "generation
-    # reached the 1000-token limit without an end-of-speech token" -- the known
-    # signature of guidance not being applied. CFG here is a PAIR of stage-0
-    # sequences kept in lockstep by a patch on `GPUARModelRunner._sample`, and a
-    # captured graph replays the step without that per-step Python hook, so the
-    # conditional row stops being blended with its companion and runs away
-    # unguided to the token cap. This is not a warmup or shape issue; graphs are
-    # incompatible with the CFG pairing implementation.
+    # Eager compatibility profile. For transformer-only PIECEWISE graphs,
+    # use chatterbox_mtl_v3_low_latency.yaml. Full-model capture is unsafe:
+    # it freezes Python request metadata and embedding/voice routing.
     enforce_eager: true
     trust_remote_code: true
     enable_prefix_caching: false

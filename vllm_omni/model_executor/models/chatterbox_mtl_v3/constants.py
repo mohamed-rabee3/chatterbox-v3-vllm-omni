@@ -14,6 +14,8 @@ Pinned revisions
 
 from __future__ import annotations
 
+import os
+
 CHATTERBOX_REPO_ID = "ResembleAI/chatterbox"
 CHATTERBOX_REVISION = "5bb1f6ee58e50c3b8d408bc82a6d3740c2db6e18"
 UPSTREAM_SOURCE_REVISION = "5de7a54aa4e5e2baadb0182dde554908b48b85c2"
@@ -119,7 +121,7 @@ S3GEN_TOKEN_MEL_RATIO = 2  # mel frames per codec token
 # chunk's decode of the same region. 10 ms at 24 kHz: long enough to hide the
 # rendering difference between two prefix decodes, short enough that it costs
 # nothing anyone can perceive.
-ACOUSTIC_STREAM_CROSSFADE_SAMPLES = 240
+ACOUSTIC_STREAM_CROSSFADE_SAMPLES = 480
 
 # Fewest codes a chunk may EMIT. The binding constraint is the HiFT vocoder,
 # not the encoder lookahead: its reflection padding is 1024 samples per side, so
@@ -130,16 +132,55 @@ ACOUSTIC_STREAM_CROSSFADE_SAMPLES = 240
 ACOUSTIC_MIN_EMIT_CODES = 2
 
 # First streamed chunk in codec tokens. TTFA is set by this number alone, so it
-# is deliberately small (1 s of audio at 25 tokens/s).
-ACOUSTIC_STREAM_FIRST_BLOCK = 5
+# is deliberately small -- but not as small as it looks: the encoder's 3-code
+# lookahead is subtracted from it, so a 5-code first block EMITS 2 codes, i.e.
+# 60 ms of audio. Measured under 20 concurrent callers, that is the single
+# largest source of playback starvation: the client starts playing 60 ms of
+# audio and the second chunk cannot arrive before it runs out, so essentially
+# every turn underflows once at the head while later chunks never do.
+# Buying that back costs TTFA linearly (one code is one stage-0 step) and is
+# the right trade whenever TTFA has headroom against the target.
+ACOUSTIC_STREAM_FIRST_BLOCK = int(os.environ.get("CBX_STREAM_FIRST_BLOCK", "5"))
 
 # The block is multiplied by this after each chunk. Cumulative re-decode costs
 # O(n^2/B) at a fixed block -- x5.0 of the one-shot cost at 225 codes -- while
 # growing it holds TTFA (set by the FIRST block) and brings the cost back to
 # x1.9-x2.7. Safe for playback because the client's buffer grows faster than
 # the chunks lengthen: generation runs many times faster than realtime.
-ACOUSTIC_STREAM_BLOCK_GROWTH = 2.0
-ACOUSTIC_STREAM_MAX_BLOCK = 400
+# Connector codec_chunk_growth / codec_max_chunk_frames are equality-checked
+# against these two. NOTE: with the bounded context window enabled
+# (ACOUSTIC_STREAM_CTX_WINDOW > 0) the window is auto-widened to at least one
+# block + a 96-code overlap margin, so a large max block simply delays when
+# windowing first engages -- set the window comfortably above the max block.
+#
+# The ladder is a *serving policy*, not a model constant, but stage 0's chunk
+# transport and stage 1's decode schedule must agree exactly or the connector's
+# equality check rejects the deploy. They run in different processes reading
+# different sections of the deploy config, so the tunable lives in the
+# environment, which both inherit from the server launch, and the pinned values
+# below stay the defaults.
+#
+# Raising the growth is the one lever that reduces acoustic work WITHOUT
+# reducing context: every chunk re-decodes the reference prompt (250 codes) plus
+# its window, so the cost is dominated by the NUMBER of decodes, and a steeper
+# ladder makes fewer, larger ones -- each rendered with at least as much context
+# as before. It coarsens chunk granularity, which the client's buffer absorbs
+# because the buffer grows faster than the chunks lengthen.
+ACOUSTIC_STREAM_BLOCK_GROWTH = float(os.environ.get("CBX_STREAM_GROWTH", "1.8"))
+ACOUSTIC_STREAM_MAX_BLOCK = int(os.environ.get("CBX_STREAM_MAX_BLOCK", "100"))
+
+# Bounded left-context window for the streaming re-decode, in codec tokens.
+# 0 disables it: every non-final chunk re-decodes the whole prefix (the shipped
+# behaviour). When > 0, a non-final chunk whose cumulative code count exceeds
+# this decodes only [scheduled - W : scheduled] (still prepended with the full
+# reference prompt), so per-chunk acoustic cost STOPS GROWING with utterance
+# length and equal-window rows re-batch. Only utterances longer than
+# ~W/25 seconds are affected; shorter ones are byte-identical to W=0. The moving
+# left edge is a bounded rendering change (both encoder and flow estimator are
+# bidirectional): it needs the streaming ASR + seam gates, exactly like the
+# growing-prefix crossfade it extends. Overridden per deploy by
+# ``acoustic_stream_ctx_window`` in the stage hf_overrides.
+ACOUSTIC_STREAM_CTX_WINDOW = 0
 
 # Rows that may share one acoustic forward pass. Only length-identical rows are
 # ever grouped (padding is not isolated by this checkpoint), so the cap only
@@ -147,6 +188,26 @@ ACOUSTIC_STREAM_MAX_BLOCK = 400
 # ladder are served in one pass. 8 is enough for the completed-clause profile;
 # streaming raises it, because there its first chunks are what batch together.
 ACOUSTIC_MAX_BATCH_ROWS = 8
+
+# Threads used to watermark one decode batch's rows. Perth is a CPU model and
+# costs 40-140 ms per row -- comparable to the entire GPU acoustic decode -- and
+# the reference applies it one row at a time inside the stage-1 forward, so the
+# GPU idles for rows x that cost on every batch. The rows are independent, the
+# call is unchanged and the outputs are bit-identical; only the scheduling
+# differs. Capped well under the host's core count so it cannot starve the
+# engine's own threads. Overridden per deploy by ``acoustic_watermark_workers``.
+ACOUSTIC_WATERMARK_WORKERS = 16
+
+# Where Perth's DSP runs. It is a torch model (an STFT pair around a 2.4 M
+# parameter conv encoder) that upstream instantiates on the CPU, where it costs
+# 40-140 ms per emitted chunk INSIDE the stage-1 forward -- so the GPU idles for
+# that long on every chunk of every stream, which is what caps sustained
+# streaming throughput. "auto" runs it on the acoustic device when there is one.
+# The resampler that defines the signal band stays on the CPU either way, so
+# this is placement, not a model change: measured against the CPU run the
+# waveform differs by at most 7e-6, about 1e-4 of the watermark's own
+# perturbation. Set "cpu" to pin the upstream placement.
+ACOUSTIC_WATERMARK_DEVICE = "auto"
 DEFAULT_CFM_TIMESTEPS = 10
 ACOUSTIC_INFERENCE_CFG_RATE = 0.7
 

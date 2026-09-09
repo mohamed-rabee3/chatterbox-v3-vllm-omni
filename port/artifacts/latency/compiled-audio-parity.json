@@ -1,0 +1,37 @@
+[
+  {
+    "file": "ar_plain.wav",
+    "same_shape_and_sample_rate": true,
+    "max_abs_diff": 0.00030517578125,
+    "rms_diff": 1.1915403774764854e-05,
+    "peak": 1.0
+  },
+  {
+    "file": "en_plain.wav",
+    "same_shape_and_sample_rate": true,
+    "max_abs_diff": 0.000396728515625,
+    "rms_diff": 1.6183990737772547e-05,
+    "peak": 0.999969482421875
+  },
+  {
+    "file": "en_short.wav",
+    "same_shape_and_sample_rate": true,
+    "max_abs_diff": 9.1552734375e-05,
+    "rms_diff": 5.329004125087522e-06,
+    "peak": 0.974853515625
+  },
+  {
+    "file": "mixed_ar_en.wav",
+    "same_shape_and_sample_rate": true,
+    "max_abs_diff": 6.103515625e-05,
+    "rms_diff": 5.220322691457113e-06,
+    "peak": 1.0
+  },
+  {
+    "file": "stream.wav",
+    "same_shape_and_sample_rate": true,
+    "max_abs_diff": 0.000396728515625,
+    "rms_diff": 1.618199166841805e-05,
+    "peak": 0.999969482421875
+  }
+]

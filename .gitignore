@@ -18,3 +18,4 @@ port/artifacts/golden/
 port/artifacts/**/*.wav
 port/artifacts/**/*.npz
 *.log
+port/artifacts/**/*.pcm

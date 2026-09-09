@@ -179,3 +179,30 @@ def test_reassembled_stream_matches_the_full_clause_ledger():
     got = np.concatenate([c for c in out if len(c)])
     assert got.shape[0] == final_sample_limit(n_codes) == 98880
     np.testing.assert_array_equal(got, full[:98880])
+
+
+def test_scheduled_transport_sends_only_decode_boundaries_and_final_tail():
+    c = CodecCursor('batched-transport')
+    chunks = []
+    emitted_at = []
+    for n in range(1, 141):
+        c.observe(list(range(n)))
+        chunk = c.take_scheduled_chunk(first_block=5, growth=4, max_block=400)
+        if chunk is not None:
+            chunks.append(chunk)
+            emitted_at.append(n)
+    assert emitted_at == [6, 26, 106]
+    assert list(map(len, chunks)) == [5, 20, 80]
+    c.observe(list(range(140)) + [K.STOP_SPEECH_TOKEN])
+    chunks.append(c.take_scheduled_chunk(first_block=5, growth=4, max_block=400))
+    assert [x for chunk in chunks for x in chunk] == list(range(140))
+    assert c.take_scheduled_chunk(first_block=5, growth=4, max_block=400) is None
+
+
+def test_scheduled_transport_keeps_exact_rungs_on_a_multi_token_callback():
+    c = CodecCursor('coalesced')
+    c.observe(list(range(40)))
+    assert c.take_scheduled_chunk(first_block=5, growth=4, max_block=400) == list(range(5))
+    assert c.take_scheduled_chunk(first_block=5, growth=4, max_block=400) == list(range(5,25))
+    assert c.take_scheduled_chunk(first_block=5, growth=4, max_block=400) is None
+    assert c.take_scheduled_chunk(first_block=5, growth=4, max_block=400, force_flush=True) == list(range(25,40))

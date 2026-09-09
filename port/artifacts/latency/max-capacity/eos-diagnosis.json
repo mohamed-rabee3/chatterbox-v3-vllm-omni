@@ -1,0 +1,10 @@
+{
+  "diagnosis": "Serving text tokenizer uses EOS id 0, which is a valid Chatterbox speech codec. Speech EOS is 6562.",
+  "fix": "ignore_eos=True and stop_token_ids=[6562] in serving adapter and pipeline constraints; retain generation validation",
+  "before": "Repeated first greeting stopped after 2 codec tokens and failed truncation validation.",
+  "after": "Same text, voice, seed=42 produces 4.48 seconds; local Whisper transcription contains the complete sentence.",
+  "rejected": "Minimum-speech-length mask blocked 6562 but did not block text-tokenizer EOS 0; removed.",
+  "asr_model": "openai/whisper-large-v3-turbo",
+  "asr_revision": "41f01f3fe87f28c78e2fbf8b568835947dd65ed9",
+  "quality_scope": "Small local ASR diagnostic, not a comprehensive listening or voice-similarity evaluation."
+}

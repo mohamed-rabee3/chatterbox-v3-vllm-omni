@@ -1,0 +1,27 @@
+{
+  "date_utc": "2026-09-09",
+  "scope": "TTS HTTP endpoint only; no STT/LLM execution or latency",
+  "hardware": "NVIDIA GeForce RTX 5090, 595.80, 32607 MiB",
+  "service_profile": "vllm_omni/deploy/chatterbox_mtl_v3_low_latency.yaml",
+  "profile_sha256": "8bf536c1ac4d1051888ebb1bf66b9460af65c88691836e5b21db2f28ede23d0b",
+  "workload_version": 2,
+  "changes_from_prior_runs": [
+    "Pace next turn after modeled audio playback completes",
+    "Unique RNG stream per user and seeded wait-time RNG",
+    "Record per-completed-turn latency and playback metrics"
+  ],
+  "conversation_gap_s": [
+    1.5,
+    6.0
+  ],
+  "playback_buffer_s": 0.2,
+  "acceptance": {
+    "playback_start_p95_s_max": 1.0,
+    "buffered_stall_p95_s_max": 0.1,
+    "failures_max": 0,
+    "unfinished_max": 0
+  },
+  "acceptance_note": "Explicit working criteria, not user-specified SLA. A load sample is not a production guarantee.",
+  "warmup": "Three full voice requests before each run; existing compiled server kept running.",
+  "measurement_note": "Metrics include ramp and completion drain. Historical workload-v1 runs are not directly comparable."
+}
