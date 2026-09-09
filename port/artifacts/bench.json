@@ -1,0 +1,107 @@
+[
+  {
+    "label": "cold voice ex01",
+    "latency_s": 0.976,
+    "ok": true
+  },
+  {
+    "label": "cold voice ex02",
+    "latency_s": 0.785,
+    "ok": true
+  },
+  {
+    "label": "cold voice spk1272",
+    "latency_s": 0.808,
+    "ok": true
+  },
+  {
+    "label": "closed-loop c=1",
+    "offered": 8,
+    "succeeded": 8,
+    "failed": 0,
+    "wall_s": 18.52,
+    "latency_p50_s": 1.875,
+    "latency_p95_s": 4.611,
+    "latency_p99_s": 4.615,
+    "latency_max_s": 4.605,
+    "audio_seconds_total": 38.64,
+    "audio_s_per_wall_s": 2.09,
+    "requests_per_s": 0.432,
+    "errors": []
+  },
+  {
+    "label": "closed-loop c=2",
+    "offered": 8,
+    "succeeded": 8,
+    "failed": 0,
+    "wall_s": 11.36,
+    "latency_p50_s": 2.168,
+    "latency_p95_s": 7.567,
+    "latency_p99_s": 8.208,
+    "latency_max_s": 6.588,
+    "audio_seconds_total": 40.12,
+    "audio_s_per_wall_s": 3.53,
+    "requests_per_s": 0.704,
+    "errors": []
+  },
+  {
+    "label": "closed-loop c=4",
+    "offered": 16,
+    "succeeded": 16,
+    "failed": 0,
+    "wall_s": 17.26,
+    "latency_p50_s": 3.085,
+    "latency_p95_s": 7.547,
+    "latency_p99_s": 7.766,
+    "latency_max_s": 7.498,
+    "audio_seconds_total": 85.6,
+    "audio_s_per_wall_s": 4.96,
+    "requests_per_s": 0.927,
+    "errors": []
+  },
+  {
+    "label": "closed-loop c=8",
+    "offered": 32,
+    "succeeded": 32,
+    "failed": 0,
+    "wall_s": 25.69,
+    "latency_p50_s": 4.539,
+    "latency_p95_s": 11.707,
+    "latency_p99_s": 12.881,
+    "latency_max_s": 12.285,
+    "audio_seconds_total": 175.72,
+    "audio_s_per_wall_s": 6.84,
+    "requests_per_s": 1.246,
+    "errors": []
+  },
+  {
+    "label": "closed-loop c=16",
+    "offered": 64,
+    "succeeded": 64,
+    "failed": 0,
+    "wall_s": 44.67,
+    "latency_p50_s": 7.928,
+    "latency_p95_s": 19.883,
+    "latency_p99_s": 22.416,
+    "latency_max_s": 22.005,
+    "audio_seconds_total": 364.52,
+    "audio_s_per_wall_s": 8.16,
+    "requests_per_s": 1.433,
+    "errors": []
+  },
+  {
+    "label": "closed-loop c=32",
+    "offered": 128,
+    "succeeded": 128,
+    "failed": 0,
+    "wall_s": 80.13,
+    "latency_p50_s": 14.456,
+    "latency_p95_s": 36.14,
+    "latency_p99_s": 38.893,
+    "latency_max_s": 39.01,
+    "audio_seconds_total": 725.92,
+    "audio_s_per_wall_s": 9.06,
+    "requests_per_s": 1.597,
+    "errors": []
+  }
+]

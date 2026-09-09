@@ -1,0 +1,96 @@
+# Chatterbox Multilingual V3: 2-stage T3 (AR) -> S3Gen (flow matching + HiFT).
+#
+# Conservative-by-design starting profile. Everything here is a correctness
+# decision first and a performance decision second; see the notes per key.
+#
+# Deliberately DISABLED at this stage (each needs its own gate before it is
+# turned on -- see the port plan's optimization order):
+#   * prefix caching        -- stage-0 prompt ids are conditioning placeholders
+#                              plus text ids, so a cache key built from ids
+#                              alone can collide across voices/exaggerations.
+#                              The CFG pair patches also skip prefix-cache
+#                              reads, so enabling it buys nothing today.
+#   * CUDA graphs on stage 0 -- must first be replayed against different voices,
+#                              positions, lengths and cancellations.
+#   * speculative decoding   -- adds a second sampling path to a model whose
+#                              sampling order is the fidelity contract.
+#   * quantization / FP8     -- separate quality-qualified deployment profile.
+#   * incremental acoustics  -- gated by `enable_incremental_acoustics` in the
+#                              model config, default off, pending its own
+#                              streaming-quality gate.
+#
+# Concurrency note: a guided request occupies TWO stage-0 sequences (the
+# conditional row and its unconditional companion), so `max_num_seqs: 64` is
+# 32 concurrent callers, not 64. KV per token per row is
+# 2 * 30 layers * 16 KV heads * 64 dim * 2 bytes = 120 KiB, so a guided pair
+# costs ~240 KiB per token position before paging overhead.
+#
+# Classifier-free guidance is MANDATORY for this model: the reference decode
+# loop blends a conditional and an unconditional row every step, and the
+# repetition penalty runs over the speech history only. Both live in
+# `ChatterboxCFGLogitsProcessor`, listed under stage 0's `logits_processors`
+# below. Registering it is what also installs the CFG pairing scheduler
+# patches (the gate matches "CFGLogitsProcessor" in the class name), so the
+# pair stays step-locked. Removing that line does not disable guidance
+# gracefully -- it produces unguided, unpenalised generation, which on longer
+# inputs runs away to the token cap instead of emitting EOS.
+async_chunk: false
+
+stages:
+  - stage_id: 0
+    # The V3 checkpoint is F32 and the fidelity gates were measured in F32.
+    # vLLM would otherwise downcast to bfloat16, which is a model-quality change
+    # and needs its own numerical + language-quality comparison first.
+    dtype: float32
+    # T3 prompts are short (34 conditioning + text + 2 BOS); the token budget
+    # mostly bounds how many prefills share a step.
+    max_num_batched_tokens: 8192
+    max_num_seqs: 64
+    gpu_memory_utilization: 0.55
+    # Chunked prefill would split one CFG pair member's prompt across steps
+    # while the other fits in one. The pair patches can equalize that, but it is
+    # untested for this model, and Chatterbox prompts are short enough that
+    # chunking buys nothing.
+    enable_chunked_prefill: false
+    enforce_eager: true
+    trust_remote_code: true
+    enable_prefix_caching: false
+    max_model_len: 4096
+    devices: "0"
+    logits_processors:
+      - "vllm_omni.model_executor.models.chatterbox_mtl_v3.sampling:ChatterboxCFGLogitsProcessor"
+    default_sampling_params:
+      max_tokens: 1000
+      temperature: 0.8
+      top_p: 1.0
+      min_p: 0.05
+      # The speech-only repetition penalty is applied by the Chatterbox logits
+      # processor over [speech BOS] + generated ids. The builtin penalty would
+      # additionally cover the prompt, so it must stay exactly 1.0.
+      repetition_penalty: 1.0
+      # Declaring extra_args here turns on has_sampling_extra_args, so each
+      # row's cfg_role reaches the model's forward (the uncond row zeroes its
+      # text content there), and tells the CFG scheduler patches that this
+      # stage is paired. The adapter overrides these per request.
+      extra_args:
+        cfg_role: cond
+        cfg_scale: 1.5
+    disable_hybrid_kv_cache_manager: true
+    mm_processor_cache_gb: 0
+    skip_mm_profiling: true
+
+  - stage_id: 1
+    dtype: float32
+    max_num_batched_tokens: 32768
+    max_num_seqs: 16
+    gpu_memory_utilization: 0.25
+    # Dynamic convolution shapes: CUDA graphs do not apply.
+    enforce_eager: true
+    trust_remote_code: true
+    enable_prefix_caching: false
+    max_model_len: 4096
+    devices: "0"
+    default_sampling_params:
+      max_tokens: 1
+    disable_hybrid_kv_cache_manager: true
+    skip_mm_profiling: true

@@ -1,0 +1,38 @@
+[
+  {
+    "text": "t15",
+    "n_text_tokens": 32,
+    "reference_seconds": 3.24,
+    "cfg_0.0": 0.04,
+    "cfg_0.25": 3.52,
+    "cfg_0.5": 3.24,
+    "cfg_1.0": 3.12
+  },
+  {
+    "text": "t40",
+    "n_text_tokens": 47,
+    "reference_seconds": 4.36,
+    "cfg_0.0": 0.04,
+    "cfg_0.25": 4.24,
+    "cfg_0.5": 4.36,
+    "cfg_1.0": 4.36
+  },
+  {
+    "text": "t70",
+    "n_text_tokens": 80,
+    "reference_seconds": 7.12,
+    "cfg_0.0": 0.04,
+    "cfg_0.25": 7.48,
+    "cfg_0.5": 7.0,
+    "cfg_1.0": 1.04
+  },
+  {
+    "text": "t102",
+    "n_text_tokens": 102,
+    "reference_seconds": 8.96,
+    "cfg_0.0": 0.04,
+    "cfg_0.25": 9.52,
+    "cfg_0.5": 1.08,
+    "cfg_1.0": 8.72
+  }
+]

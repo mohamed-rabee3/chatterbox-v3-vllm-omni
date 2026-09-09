@@ -1,0 +1,309 @@
+{
+  "voice": "ex02",
+  "first_block": 10,
+  "growth": 2.0,
+  "crossfade_samples": 240,
+  "cfm_timesteps": 10,
+  "cases": {
+    "ar_long": {
+      "n_codes": 261,
+      "chunk_points": [
+        10,
+        30,
+        70,
+        150,
+        261
+      ],
+      "n_chunks": 5,
+      "tokens_decoded": 521,
+      "cost_multiplier": 2.0,
+      "first_audio_after_codes": 10,
+      "oneshot_samples": 249600,
+      "streamed_samples": 249600,
+      "length_delta_samples": 0,
+      "seam_streamed": {
+        "max_jump": 0.191773,
+        "p9999_jump": 0.12482,
+        "ratio": 1.54
+      },
+      "seam_oneshot": {
+        "max_jump": 0.264601,
+        "p9999_jump": 0.168296,
+        "ratio": 1.57
+      },
+      "streamed_cer": 0.0,
+      "streamed_speaker_similarity": 0.9203,
+      "oneshot_cer": 0.0,
+      "oneshot_speaker_similarity": 0.9171
+    },
+    "ar_numbers": {
+      "n_codes": 130,
+      "chunk_points": [
+        10,
+        30,
+        70,
+        130
+      ],
+      "n_chunks": 4,
+      "tokens_decoded": 240,
+      "cost_multiplier": 1.85,
+      "first_audio_after_codes": 10,
+      "oneshot_samples": 123840,
+      "streamed_samples": 123840,
+      "length_delta_samples": 0,
+      "seam_streamed": {
+        "max_jump": 0.170575,
+        "p9999_jump": 0.116347,
+        "ratio": 1.47
+      },
+      "seam_oneshot": {
+        "max_jump": 0.139789,
+        "p9999_jump": 0.131622,
+        "ratio": 1.06
+      },
+      "streamed_cer": 0.5,
+      "streamed_speaker_similarity": 0.9286,
+      "oneshot_cer": 0.5,
+      "oneshot_speaker_similarity": 0.9176
+    },
+    "ar_plain": {
+      "n_codes": 114,
+      "chunk_points": [
+        10,
+        30,
+        70,
+        114
+      ],
+      "n_chunks": 4,
+      "tokens_decoded": 224,
+      "cost_multiplier": 1.96,
+      "first_audio_after_codes": 10,
+      "oneshot_samples": 108480,
+      "streamed_samples": 108480,
+      "length_delta_samples": 0,
+      "seam_streamed": {
+        "max_jump": 0.175477,
+        "p9999_jump": 0.156558,
+        "ratio": 1.12
+      },
+      "seam_oneshot": {
+        "max_jump": 0.197135,
+        "p9999_jump": 0.164184,
+        "ratio": 1.2
+      },
+      "streamed_cer": 0.0,
+      "streamed_speaker_similarity": 0.9017,
+      "oneshot_cer": 0.0488,
+      "oneshot_speaker_similarity": 0.8716
+    },
+    "ar_short": {
+      "n_codes": 36,
+      "chunk_points": [
+        10,
+        30,
+        36
+      ],
+      "n_chunks": 3,
+      "tokens_decoded": 76,
+      "cost_multiplier": 2.11,
+      "first_audio_after_codes": 10,
+      "oneshot_samples": 33600,
+      "streamed_samples": 33600,
+      "length_delta_samples": 0,
+      "seam_streamed": {
+        "max_jump": 0.087629,
+        "p9999_jump": 0.075115,
+        "ratio": 1.17
+      },
+      "seam_oneshot": {
+        "max_jump": 0.100104,
+        "p9999_jump": 0.088669,
+        "ratio": 1.13
+      },
+      "streamed_cer": 0.0,
+      "streamed_speaker_similarity": 0.7546,
+      "oneshot_cer": 0.0,
+      "oneshot_speaker_similarity": 0.7876
+    },
+    "en_long": {
+      "n_codes": 242,
+      "chunk_points": [
+        10,
+        30,
+        70,
+        150,
+        242
+      ],
+      "n_chunks": 5,
+      "tokens_decoded": 502,
+      "cost_multiplier": 2.07,
+      "first_audio_after_codes": 10,
+      "oneshot_samples": 231360,
+      "streamed_samples": 231360,
+      "length_delta_samples": 0,
+      "seam_streamed": {
+        "max_jump": 0.160741,
+        "p9999_jump": 0.141642,
+        "ratio": 1.13
+      },
+      "seam_oneshot": {
+        "max_jump": 0.193819,
+        "p9999_jump": 0.132557,
+        "ratio": 1.46
+      },
+      "streamed_cer": 0.0,
+      "streamed_speaker_similarity": 0.9495,
+      "oneshot_cer": 0.0,
+      "oneshot_speaker_similarity": 0.9544
+    },
+    "en_numbers": {
+      "n_codes": 173,
+      "chunk_points": [
+        10,
+        30,
+        70,
+        150,
+        173
+      ],
+      "n_chunks": 5,
+      "tokens_decoded": 433,
+      "cost_multiplier": 2.5,
+      "first_audio_after_codes": 10,
+      "oneshot_samples": 165120,
+      "streamed_samples": 165120,
+      "length_delta_samples": 0,
+      "seam_streamed": {
+        "max_jump": 0.18416,
+        "p9999_jump": 0.119135,
+        "ratio": 1.55
+      },
+      "seam_oneshot": {
+        "max_jump": 0.147744,
+        "p9999_jump": 0.115517,
+        "ratio": 1.28
+      },
+      "streamed_cer": 0.0746,
+      "streamed_speaker_similarity": 0.9506,
+      "oneshot_cer": 0.0746,
+      "oneshot_speaker_similarity": 0.9524
+    },
+    "en_plain": {
+      "n_codes": 81,
+      "chunk_points": [
+        10,
+        30,
+        70,
+        81
+      ],
+      "n_chunks": 4,
+      "tokens_decoded": 191,
+      "cost_multiplier": 2.36,
+      "first_audio_after_codes": 10,
+      "oneshot_samples": 76800,
+      "streamed_samples": 76800,
+      "length_delta_samples": 0,
+      "seam_streamed": {
+        "max_jump": 0.214057,
+        "p9999_jump": 0.177464,
+        "ratio": 1.21
+      },
+      "seam_oneshot": {
+        "max_jump": 0.121253,
+        "p9999_jump": 0.105042,
+        "ratio": 1.15
+      },
+      "streamed_cer": 0.0,
+      "streamed_speaker_similarity": 0.8833,
+      "oneshot_cer": 0.0,
+      "oneshot_speaker_similarity": 0.8742
+    },
+    "en_short": {
+      "n_codes": 27,
+      "chunk_points": [
+        10,
+        27
+      ],
+      "n_chunks": 2,
+      "tokens_decoded": 37,
+      "cost_multiplier": 1.37,
+      "first_audio_after_codes": 10,
+      "oneshot_samples": 24960,
+      "streamed_samples": 24960,
+      "length_delta_samples": 0,
+      "seam_streamed": {
+        "max_jump": 0.057651,
+        "p9999_jump": 0.052143,
+        "ratio": 1.11
+      },
+      "seam_oneshot": {
+        "max_jump": 0.071953,
+        "p9999_jump": 0.070874,
+        "ratio": 1.02
+      },
+      "streamed_cer": 0.0,
+      "streamed_speaker_similarity": 0.6993,
+      "oneshot_cer": 0.0,
+      "oneshot_speaker_similarity": 0.6939
+    },
+    "mixed_ar_en": {
+      "n_codes": 121,
+      "chunk_points": [
+        10,
+        30,
+        70,
+        121
+      ],
+      "n_chunks": 4,
+      "tokens_decoded": 231,
+      "cost_multiplier": 1.91,
+      "first_audio_after_codes": 10,
+      "oneshot_samples": 115200,
+      "streamed_samples": 115200,
+      "length_delta_samples": 0,
+      "seam_streamed": {
+        "max_jump": 0.160959,
+        "p9999_jump": 0.142469,
+        "ratio": 1.13
+      },
+      "seam_oneshot": {
+        "max_jump": 0.178633,
+        "p9999_jump": 0.156898,
+        "ratio": 1.14
+      },
+      "streamed_cer": 0.1628,
+      "streamed_speaker_similarity": 0.8884,
+      "oneshot_cer": 0.186,
+      "oneshot_speaker_similarity": 0.8711
+    },
+    "mixed_en_ar": {
+      "n_codes": 83,
+      "chunk_points": [
+        10,
+        30,
+        70,
+        83
+      ],
+      "n_chunks": 4,
+      "tokens_decoded": 193,
+      "cost_multiplier": 2.33,
+      "first_audio_after_codes": 10,
+      "oneshot_samples": 78720,
+      "streamed_samples": 78720,
+      "length_delta_samples": 0,
+      "seam_streamed": {
+        "max_jump": 0.129212,
+        "p9999_jump": 0.09725,
+        "ratio": 1.33
+      },
+      "seam_oneshot": {
+        "max_jump": 0.113619,
+        "p9999_jump": 0.084532,
+        "ratio": 1.34
+      },
+      "streamed_cer": 0.2857,
+      "streamed_speaker_similarity": 0.8694,
+      "oneshot_cer": 0.2857,
+      "oneshot_speaker_similarity": 0.87
+    }
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "users": 0,
+  "wall_s": 179.9,
+  "turns_completed": 169,
+  "barge_ins": 11,
+  "failures": 1,
+  "failure_examples": [
+    "ChunkedEncodingError: Response ended prematurely"
+  ],
+  "ttfa_s": {
+    "p50": 0.784,
+    "p90": 1.036,
+    "p95": 1.201,
+    "p99": 1.32,
+    "max": 1.475,
+    "mean": 0.806
+  },
+  "ttfa_under_1s_pct": 85.8,
+  "ttfa_under_2s_pct": 100.0,
+  "ttfa_by_turn_class_s": {
+    "ack": {
+      "n": 42,
+      "p50": 0.75,
+      "p95": 1.015
+    },
+    "close": {
+      "n": 11,
+      "p50": 0.849,
+      "p95": 1.102
+    },
+    "explain": {
+      "n": 13,
+      "p50": 0.76,
+      "p95": 0.991
+    },
+    "greet": {
+      "n": 24,
+      "p50": 0.864,
+      "p95": 1.32
+    },
+    "reply": {
+      "n": 79,
+      "p50": 0.776,
+      "p95": 1.108
+    }
+  },
+  "total_latency_s": {
+    "p50": 7.557,
+    "p95": 26.257,
+    "max": 35.302
+  },
+  "audio_seconds_total": 872.3,
+  "audio_s_per_wall_s": 4.85,
+  "turns_per_s": 0.939,
+  "realtime_factor_p50": 0.6
+}

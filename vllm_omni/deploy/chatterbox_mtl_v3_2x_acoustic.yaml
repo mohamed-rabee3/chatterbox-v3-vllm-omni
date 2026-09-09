@@ -1,0 +1,33 @@
+# Chatterbox Multilingual V3 with TWO acoustic replicas on one GPU.
+#
+# Why: profiling showed the acoustic stage is the throughput ceiling. It caps
+# at ~10x real time at batch 1, and because this checkpoint's token encoder
+# does not isolate padded rows (see the model README), rows may only batch at
+# equal length -- which is rare, so it effectively runs at batch 1. Adding a
+# second acoustic replica is the one lever that raises that ceiling WITHOUT
+# touching the model: same weights, same solver, same noise, just another
+# worker pulling from the same queue.
+#
+# Memory budget on a 32 GiB card (F32 weights):
+#   stage 0   0.45  ~14.4 GiB   (2.0 GiB weights + KV; a guided pair costs
+#                                ~240 KiB per token position)
+#   stage 1   0.20  ~6.4 GiB x 2 replicas = 12.8 GiB
+#   total     ~27.2 GiB, leaving headroom for fragmentation and activations.
+#
+# Everything else is inherited from the base profile, including the fidelity
+# settings (dtype float32, no chunked prefill, no prefix caching) and the
+# mandatory CFG logits processor.
+base_config: chatterbox_mtl_v3.yaml
+pipeline: chatterbox_mtl_v3
+
+stages:
+  - stage_id: 0
+    gpu_memory_utilization: 0.45
+
+  - stage_id: 1
+    # One entry per replica. `devices: "0"` with num_replicas: 2 leaves the
+    # second replica with no device (the device list is SPLIT across replicas,
+    # not shared), and it then fails to import Triton or find a CUDA runtime.
+    devices: "0,0"
+    num_replicas: 2
+    gpu_memory_utilization: 0.20

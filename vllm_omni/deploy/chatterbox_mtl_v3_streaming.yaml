@@ -1,0 +1,159 @@
+# Chatterbox Multilingual V3 -- REAL (incremental) streaming profile.
+#
+# The default profile decodes a completed clause: one chunk arrives when
+# synthesis finishes, so time-to-first-audio equals total synthesis time and
+# grows with utterance length (measured: 0.96 s for a 1 s reply, 9.8 s for a
+# 10 s one). This profile renders audio for codes 0..k while the rest of the
+# clause is still being generated, so TTFA is set by the FIRST chunk alone.
+#
+# What was measured before enabling it (port/tools/eval_streaming_via_decode.py,
+# which drives the shipping acoustic path):
+#
+#   * ASR CER identical to the one-shot decode (0.0 / 0.0244 / 0.0 on
+#     en_plain / ar_plain / en_long)
+#   * speaker similarity within 0.019 of the one-shot decode
+#   * no seam: the streamed waveform's largest sample-to-sample jump sits in
+#     the same range as the one-shot decode's (a click would be many times it)
+#   * total length identical to the sample
+#
+# What it is NOT: bit-equal to the one-shot decode. The token encoder is
+# bidirectional, so re-decoding a prefix with more context renders it slightly
+# differently (5-36% of peak in mel). Streaming therefore returns a DIFFERENT
+# yet equally valid rendering, and `seed` reproduces a streamed request only
+# against other streamed requests with the same chunk schedule.
+#
+# COST: the acoustic stage re-decodes the cumulative prefix on every chunk, so
+# it does ~2x the acoustic work of the default profile (x1.96-x2.22 measured).
+# That comes off peak throughput. Use this profile when time-to-first-audio
+# matters (live agents); use the default when total throughput matters.
+
+connectors:
+  connector_of_shared_memory:
+    name: SharedMemoryConnector
+    extra:
+      shm_threshold_bytes: 65536
+      codec_streaming: true
+      connector_get_sleep_s: 0.01
+      connector_get_max_wait_first_chunk: 3000
+      connector_get_max_wait: 300
+      # First chunk in codec tokens. TTFA depends on THIS number alone: 25
+      # tokens is 1 s of audio at 25 tokens/s.
+      # First rung, in codec tokens. TTFA is (codes needed) x stage-0 inter-token
+      # latency, and that latency is 80-92 ms once the server is busy -- so this
+      # number, not the acoustic decode, is what sets TTFA under load. The floor
+      # is lookahead+1 = 4 (a chunk shorter than the encoder's 3-code lookahead
+      # can emit nothing). 5 emits 80 ms of audio, enough to start playback,
+      # and costs ~425 ms of AR wait instead of ~850 ms at 10.
+      codec_chunk_frames: 5
+      # The block is multiplied by this after each chunk. A fixed block makes
+      # the cumulative re-decode cost O(n^2/B) -- x5.0 of one-shot at 225
+      # codes; doubling holds TTFA and brings it back to x2.2. Playback is
+      # safe because generation runs many times faster than realtime, so the
+      # client's buffer grows faster than the chunks lengthen.
+      # TTFA depends only on the FIRST rung, so a steeper ladder is free for
+      # latency and cuts total acoustic work: at growth 2 a ~100-code utterance
+      # decodes at 10/30/70 plus the final pass; at growth 3 it is 10/40 plus
+      # the final. Every decode removed is ~110 ms of GPU that stage 0 gets
+      # back -- and it is stage 0's inter-token latency (80-92 ms under 20-user
+      # load, ~10-15 ms idle) that actually sets TTFA when the server is busy.
+      codec_chunk_growth: 4.0
+      codec_max_chunk_frames: 400
+      # Codes withheld from each non-final chunk: the token encoder's
+      # PreLookaheadLayer needs this many future codes before its output for a
+      # position settles.
+      codec_pre_lookahead_frames: 3
+
+async_chunk: true
+
+stages:
+  - stage_id: 0
+    # The V3 checkpoint is F32 and the fidelity gates were measured in F32.
+    # vLLM would otherwise downcast to bfloat16, which is a model-quality change
+    # and needs its own numerical + language-quality comparison first.
+    dtype: float32
+    # T3 prompts are short (34 conditioning + text + 2 BOS); the token budget
+    # mostly bounds how many prefills share a step.
+    max_num_batched_tokens: 8192
+    max_num_seqs: 64
+    gpu_memory_utilization: 0.55
+    # Chunked prefill would split one CFG pair member's prompt across steps
+    # while the other fits in one. The pair patches can equalize that, but it is
+    # untested for this model, and Chatterbox prompts are short enough that
+    # chunking buys nothing.
+    enable_chunked_prefill: false
+    # CUDA graphs MUST stay off on stage 0. Tried and measured: with
+    # `enforce_eager: false` the server produced 83 errors and 51 cancellations
+    # against 72 successes at 20-30 callers, every failure being "generation
+    # reached the 1000-token limit without an end-of-speech token" -- the known
+    # signature of guidance not being applied. CFG here is a PAIR of stage-0
+    # sequences kept in lockstep by a patch on `GPUARModelRunner._sample`, and a
+    # captured graph replays the step without that per-step Python hook, so the
+    # conditional row stops being blended with its companion and runs away
+    # unguided to the token cap. This is not a warmup or shape issue; graphs are
+    # incompatible with the CFG pairing implementation.
+    enforce_eager: true
+    trust_remote_code: true
+    enable_prefix_caching: false
+    max_model_len: 4096
+    devices: "0"
+    logits_processors:
+      - "vllm_omni.model_executor.models.chatterbox_mtl_v3.sampling:ChatterboxCFGLogitsProcessor"
+    output_connectors:
+      to_stage_1: connector_of_shared_memory
+    default_sampling_params:
+      max_tokens: 1000
+      temperature: 0.8
+      top_p: 1.0
+      min_p: 0.05
+      # The speech-only repetition penalty is applied by the Chatterbox logits
+      # processor over [speech BOS] + generated ids. The builtin penalty would
+      # additionally cover the prompt, so it must stay exactly 1.0.
+      repetition_penalty: 1.0
+      # Declaring extra_args here turns on has_sampling_extra_args, so each
+      # row's cfg_role reaches the model's forward (the uncond row zeroes its
+      # text content there), and tells the CFG scheduler patches that this
+      # stage is paired. The adapter overrides these per request.
+      extra_args:
+        cfg_role: cond
+        cfg_scale: 1.5
+    disable_hybrid_kv_cache_manager: true
+    mm_processor_cache_gb: 0
+    skip_mm_profiling: true
+
+  - stage_id: 1
+    dtype: float32
+    max_num_batched_tokens: 32768
+    # Every request now issues several acoustic decodes instead of one, so more
+    # of them are in flight at once than in the default profile.
+    max_num_seqs: 32
+    gpu_memory_utilization: 0.25
+    # Dynamic convolution shapes: CUDA graphs do not apply.
+    enforce_eager: true
+    trust_remote_code: true
+    enable_prefix_caching: false
+    max_model_len: 4096
+    devices: "0"
+    default_sampling_params:
+      max_tokens: 1
+    input_connectors:
+      from_stage_0: connector_of_shared_memory
+    hf_overrides:
+      # Flow-matching ODE steps per acoustic decode. The decode cost is almost
+      # entirely fixed per-call overhead multiplied by this number: measured at
+      # 223 ms for 10 steps, 142 ms for 6, 102 ms for 4 -- and it barely moves
+      # with the chunk size (5 vs 50 codes) or the reference prompt length
+      # (250 vs 50 codes), so this is the ONLY lever on time-to-first-audio.
+      #
+      # 4 steps was measured against 10 on en_plain/ex01: CER 0.0000 either
+      # way, speaker similarity 0.8667 vs 0.8811. That is the trade this
+      # profile takes to reach a conversational TTFA; the default (throughput)
+      # profile keeps 10.
+      acoustic_cfm_timesteps: 4
+      # Concurrent streams are pinned to the same decode ladder, so their first
+      # chunks are length-identical and CAN share a forward pass. Without a cap
+      # high enough to hold them, they queue instead -- and it is the queue, not
+      # the decode, that sets TTFA under load. Only equal-length rows are ever
+      # grouped, which is the batching mode already gated safe.
+      acoustic_max_batch_rows: 32
+    disable_hybrid_kv_cache_manager: true
+    skip_mm_profiling: true

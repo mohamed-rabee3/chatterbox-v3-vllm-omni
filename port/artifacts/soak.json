@@ -1,0 +1,32 @@
+[
+  {
+    "label": "cold voice ex01",
+    "latency_s": 1.035,
+    "ok": true
+  },
+  {
+    "label": "cold voice ex02",
+    "latency_s": 0.734,
+    "ok": true
+  },
+  {
+    "label": "cold voice spk1272",
+    "latency_s": 1.026,
+    "ok": true
+  },
+  {
+    "label": "open-loop 1.2 req/s for 240s",
+    "offered": 288,
+    "succeeded": 288,
+    "failed": 0,
+    "wall_s": 245.95,
+    "latency_p50_s": 4.098,
+    "latency_p95_s": 9.713,
+    "latency_p99_s": 10.037,
+    "latency_max_s": 10.493,
+    "audio_seconds_total": 1628.28,
+    "audio_s_per_wall_s": 6.62,
+    "requests_per_s": 1.171,
+    "errors": []
+  }
+]

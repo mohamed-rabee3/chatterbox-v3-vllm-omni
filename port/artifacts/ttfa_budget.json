@@ -1,0 +1,43 @@
+{
+  "voice": "ex01",
+  "prompt_codes": 250,
+  "cfm_timesteps": 10,
+  "blocks": {
+    "3": {
+      "decode_s": 0.0001,
+      "audio_emitted_s": 0.0,
+      "rtf": 0.0
+    },
+    "5": {
+      "decode_s": 0.2362,
+      "audio_emitted_s": 0.08,
+      "rtf": 0.34
+    },
+    "8": {
+      "decode_s": 0.26,
+      "audio_emitted_s": 0.2,
+      "rtf": 0.77
+    },
+    "12": {
+      "decode_s": 0.2446,
+      "audio_emitted_s": 0.36,
+      "rtf": 1.47
+    },
+    "25": {
+      "decode_s": 0.2357,
+      "audio_emitted_s": 0.88,
+      "rtf": 3.73
+    },
+    "50": {
+      "decode_s": 0.2456,
+      "audio_emitted_s": 1.88,
+      "rtf": 7.66
+    }
+  },
+  "cfm_sweep": {
+    "2": 0.0652,
+    "4": 0.1112,
+    "6": 0.1673,
+    "10": 0.2583
+  }
+}

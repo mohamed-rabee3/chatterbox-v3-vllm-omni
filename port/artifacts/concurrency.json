@@ -1,0 +1,135 @@
+{
+  "isolation": {
+    "concurrency": 16,
+    "succeeded": 16,
+    "failed": 0,
+    "wall_s": 11.44,
+    "min_margin": 0.1496,
+    "mean_own": 0.8609,
+    "mean_other": 0.6691,
+    "rows": [
+      {
+        "voice": "ex01",
+        "own": 0.8394,
+        "other": 0.6497,
+        "margin": 0.1897,
+        "seconds": 3.12
+      },
+      {
+        "voice": "ex02",
+        "own": 0.8498,
+        "other": 0.6978,
+        "margin": 0.152,
+        "seconds": 4.72
+      },
+      {
+        "voice": "ex01",
+        "own": 0.8756,
+        "other": 0.638,
+        "margin": 0.2376,
+        "seconds": 2.68
+      },
+      {
+        "voice": "ex02",
+        "own": 0.8458,
+        "other": 0.6711,
+        "margin": 0.1746,
+        "seconds": 3.44
+      },
+      {
+        "voice": "ex01",
+        "own": 0.8929,
+        "other": 0.6625,
+        "margin": 0.2304,
+        "seconds": 3.52
+      },
+      {
+        "voice": "ex02",
+        "own": 0.8579,
+        "other": 0.6624,
+        "margin": 0.1955,
+        "seconds": 4.68
+      },
+      {
+        "voice": "ex01",
+        "own": 0.877,
+        "other": 0.6895,
+        "margin": 0.1875,
+        "seconds": 3.16
+      },
+      {
+        "voice": "ex02",
+        "own": 0.8315,
+        "other": 0.6567,
+        "margin": 0.1748,
+        "seconds": 3.64
+      },
+      {
+        "voice": "ex01",
+        "own": 0.9016,
+        "other": 0.7008,
+        "margin": 0.2008,
+        "seconds": 3.36
+      },
+      {
+        "voice": "ex02",
+        "own": 0.8619,
+        "other": 0.6798,
+        "margin": 0.1821,
+        "seconds": 4.68
+      },
+      {
+        "voice": "ex01",
+        "own": 0.883,
+        "other": 0.6816,
+        "margin": 0.2014,
+        "seconds": 2.6
+      },
+      {
+        "voice": "ex02",
+        "own": 0.8255,
+        "other": 0.6759,
+        "margin": 0.1496,
+        "seconds": 3.6
+      },
+      {
+        "voice": "ex01",
+        "own": 0.8626,
+        "other": 0.6643,
+        "margin": 0.1982,
+        "seconds": 3.32
+      },
+      {
+        "voice": "ex02",
+        "own": 0.8305,
+        "other": 0.6471,
+        "margin": 0.1834,
+        "seconds": 4.4
+      },
+      {
+        "voice": "ex01",
+        "own": 0.8861,
+        "other": 0.6536,
+        "margin": 0.2325,
+        "seconds": 2.64
+      },
+      {
+        "voice": "ex02",
+        "own": 0.8541,
+        "other": 0.6741,
+        "margin": 0.18,
+        "seconds": 3.68
+      }
+    ]
+  },
+  "determinism": {
+    "same_seed_same_length": true,
+    "same_seed_max_abs_diff": 3.052e-05,
+    "same_seed_within_one_lsb": true,
+    "different_seed_length": 78720
+  },
+  "cancellation": {
+    "server_serves_after_cancel": true
+  },
+  "failures": []
+}

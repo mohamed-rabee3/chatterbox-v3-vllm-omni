@@ -1,0 +1,86 @@
+[
+  {
+    "text": "en_short",
+    "seeds": 8,
+    "reference_median_s": 3.34,
+    "reference_durations": [
+      3.24,
+      3.28,
+      3.28,
+      3.76,
+      3.36,
+      3.32,
+      3.4,
+      3.4
+    ],
+    "port_durations": [
+      3.24,
+      3.28,
+      3.28,
+      3.28,
+      3.36,
+      3.32,
+      3.4,
+      3.4
+    ],
+    "reference_truncations": 0,
+    "port_truncations": 0,
+    "port_errors": 0
+  },
+  {
+    "text": "en_long",
+    "seeds": 8,
+    "reference_median_s": 8.78,
+    "reference_durations": [
+      8.96,
+      8.6,
+      8.4,
+      8.88,
+      9.16,
+      9.24,
+      8.6,
+      8.68
+    ],
+    "port_durations": [
+      1.08,
+      1.04,
+      8.4,
+      8.8,
+      9.16,
+      9.12,
+      8.6,
+      8.68
+    ],
+    "reference_truncations": 0,
+    "port_truncations": 2,
+    "port_errors": 0
+  },
+  {
+    "text": "ar_long",
+    "seeds": 8,
+    "reference_median_s": 10.32,
+    "reference_durations": [
+      9.56,
+      10.56,
+      9.88,
+      10.52,
+      10.12,
+      10.6,
+      10.6,
+      9.96
+    ],
+    "port_durations": [
+      9.56,
+      10.56,
+      9.88,
+      10.52,
+      10.12,
+      10.72,
+      10.48,
+      9.96
+    ],
+    "reference_truncations": 0,
+    "port_truncations": 0,
+    "port_errors": 0
+  }
+]

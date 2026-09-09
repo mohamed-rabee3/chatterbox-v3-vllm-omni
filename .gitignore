@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.venv/
+
+# Model weights and reference audio are never committed.
+# Anchored to the repo root: an unanchored `models/` also matches
+# vllm_omni/model_executor/models/, which would drop the entire port.
+/models/
+/refvoices/
+*.safetensors
+*.pt
+*.ckpt
+
+# Regenerable or bulky evidence: goldens (~43 MB of .npz), rendered audio, logs.
+port/artifacts/golden/
+port/artifacts/**/*.wav
+port/artifacts/**/*.npz
+*.log

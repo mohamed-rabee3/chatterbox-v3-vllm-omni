@@ -1,0 +1,60 @@
+{
+  "users": 0,
+  "wall_s": 119.9,
+  "turns_completed": 144,
+  "barge_ins": 12,
+  "failures": 19,
+  "failure_examples": [
+    "ChunkedEncodingError: Response ended prematurely",
+    "ConnectionError: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))",
+    "ChunkedEncodingError: Response ended prematurely",
+    "ChunkedEncodingError: Response ended prematurely",
+    "ChunkedEncodingError: Response ended prematurely"
+  ],
+  "ttfa_s": {
+    "p50": 1.581,
+    "p90": 1.907,
+    "p95": 2.013,
+    "p99": 2.236,
+    "max": 2.346,
+    "mean": 1.572
+  },
+  "ttfa_under_1s_pct": 3.5,
+  "ttfa_under_2s_pct": 93.8,
+  "ttfa_by_turn_class_s": {
+    "ack": {
+      "n": 49,
+      "p50": 1.575,
+      "p95": 1.91
+    },
+    "close": {
+      "n": 9,
+      "p50": 1.507,
+      "p95": 1.787
+    },
+    "explain": {
+      "n": 9,
+      "p50": 1.58,
+      "p95": 1.722
+    },
+    "greet": {
+      "n": 24,
+      "p50": 1.383,
+      "p95": 2.011
+    },
+    "reply": {
+      "n": 53,
+      "p50": 1.621,
+      "p95": 2.121
+    }
+  },
+  "total_latency_s": {
+    "p50": 9.797,
+    "p95": 37.549,
+    "max": 53.829
+  },
+  "audio_seconds_total": 632.8,
+  "audio_s_per_wall_s": 5.28,
+  "turns_per_s": 1.201,
+  "realtime_factor_p50": 0.39
+}

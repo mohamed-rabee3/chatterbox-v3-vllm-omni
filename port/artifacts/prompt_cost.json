@@ -1,0 +1,122 @@
+[
+  {
+    "prompt_codes": 250,
+    "cfm_timesteps": 10,
+    "first_chunk_ms": 223.5,
+    "wav": "p250c10.wav",
+    "cer": 0.0,
+    "speaker_similarity": 0.8811
+  },
+  {
+    "prompt_codes": 250,
+    "cfm_timesteps": 6,
+    "first_chunk_ms": 142.3,
+    "wav": "p250c6.wav",
+    "cer": 0.0,
+    "speaker_similarity": 0.8759
+  },
+  {
+    "prompt_codes": 250,
+    "cfm_timesteps": 4,
+    "first_chunk_ms": 101.7,
+    "wav": "p250c4.wav",
+    "cer": 0.0,
+    "speaker_similarity": 0.8667
+  },
+  {
+    "prompt_codes": 150,
+    "cfm_timesteps": 10,
+    "first_chunk_ms": 229.2,
+    "wav": "p150c10.wav",
+    "cer": 0.0,
+    "speaker_similarity": 0.873
+  },
+  {
+    "prompt_codes": 150,
+    "cfm_timesteps": 6,
+    "first_chunk_ms": 145.7,
+    "wav": "p150c6.wav",
+    "cer": 0.0,
+    "speaker_similarity": 0.8748
+  },
+  {
+    "prompt_codes": 150,
+    "cfm_timesteps": 4,
+    "first_chunk_ms": 102.8,
+    "wav": "p150c4.wav",
+    "cer": 0.0,
+    "speaker_similarity": 0.8767
+  },
+  {
+    "prompt_codes": 100,
+    "cfm_timesteps": 10,
+    "first_chunk_ms": 239.3,
+    "wav": "p100c10.wav",
+    "cer": 0.0,
+    "speaker_similarity": 0.859
+  },
+  {
+    "prompt_codes": 100,
+    "cfm_timesteps": 6,
+    "first_chunk_ms": 157.4,
+    "wav": "p100c6.wav",
+    "cer": 0.0,
+    "speaker_similarity": 0.8617
+  },
+  {
+    "prompt_codes": 100,
+    "cfm_timesteps": 4,
+    "first_chunk_ms": 107.3,
+    "wav": "p100c4.wav",
+    "cer": 0.0,
+    "speaker_similarity": 0.8507
+  },
+  {
+    "prompt_codes": 75,
+    "cfm_timesteps": 10,
+    "first_chunk_ms": 241.0,
+    "wav": "p75c10.wav",
+    "cer": 0.0,
+    "speaker_similarity": 0.8625
+  },
+  {
+    "prompt_codes": 75,
+    "cfm_timesteps": 6,
+    "first_chunk_ms": 151.0,
+    "wav": "p75c6.wav",
+    "cer": 0.0,
+    "speaker_similarity": 0.8648
+  },
+  {
+    "prompt_codes": 75,
+    "cfm_timesteps": 4,
+    "first_chunk_ms": 107.9,
+    "wav": "p75c4.wav",
+    "cer": 0.0,
+    "speaker_similarity": 0.8652
+  },
+  {
+    "prompt_codes": 50,
+    "cfm_timesteps": 10,
+    "first_chunk_ms": 226.9,
+    "wav": "p50c10.wav",
+    "cer": 0.0,
+    "speaker_similarity": 0.8811
+  },
+  {
+    "prompt_codes": 50,
+    "cfm_timesteps": 6,
+    "first_chunk_ms": 144.4,
+    "wav": "p50c6.wav",
+    "cer": 0.0,
+    "speaker_similarity": 0.8827
+  },
+  {
+    "prompt_codes": 50,
+    "cfm_timesteps": 4,
+    "first_chunk_ms": 102.8,
+    "wav": "p50c4.wav",
+    "cer": 0.0,
+    "speaker_similarity": 0.8768
+  }
+]

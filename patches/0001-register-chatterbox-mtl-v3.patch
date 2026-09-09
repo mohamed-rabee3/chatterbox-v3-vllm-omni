@@ -1,0 +1,76 @@
+diff --git a/vllm_omni/config/pipeline_registry.py b/vllm_omni/config/pipeline_registry.py
+index 5586b956..5439d520 100644
+--- a/vllm_omni/config/pipeline_registry.py
++++ b/vllm_omni/config/pipeline_registry.py
+@@ -45,6 +45,7 @@ from vllm_omni.model_executor.models.bagel.pipeline import (
+     BAGEL_SINGLE_STAGE_PIPELINE,
+     BAGEL_THINK_PIPELINE,
+ )
++from vllm_omni.model_executor.models.chatterbox_mtl_v3.pipeline import CHATTERBOX_MTL_V3_PIPELINE
+ from vllm_omni.model_executor.models.cosyvoice3.pipeline import COSYVOICE3_PIPELINE
+ from vllm_omni.model_executor.models.covo_audio.pipeline import COVO_AUDIO_PIPELINE
+ from vllm_omni.model_executor.models.dots_tts.pipeline import DOTS_TTS_PIPELINE
+@@ -157,6 +158,7 @@ OMNI_PIPELINES: dict[str, PipelineConfig | PipelineResolverFunc] = {
+     "wan2_2_ti2v": WAN2_2_TI2V_PIPELINE,
+     "voxcpm2": VOXCPM2_PIPELINE,
+     "dots_tts": DOTS_TTS_PIPELINE,
++    "chatterbox_mtl_v3": CHATTERBOX_MTL_V3_PIPELINE,
+     "cosyvoice3": COSYVOICE3_PIPELINE,
+     "audex_tts": AUDEX_TTS_PIPELINE,
+     "audex_tta": AUDEX_TTA_PIPELINE,
+diff --git a/vllm_omni/entrypoints/openai/tts_adapters/__init__.py b/vllm_omni/entrypoints/openai/tts_adapters/__init__.py
+index a09d97b6..ad5b8289 100644
+--- a/vllm_omni/entrypoints/openai/tts_adapters/__init__.py
++++ b/vllm_omni/entrypoints/openai/tts_adapters/__init__.py
+@@ -104,6 +104,7 @@ def tts_entry_stage_archs() -> frozenset[str]:
+ from vllm_omni.entrypoints.openai.tts_adapters import (  # noqa: E402,F401
+     audex,
+     audex_tta,
++    chatterbox_mtl_v3,
+     cosyvoice3,
+     covo_audio,
+     dots_tts,
+diff --git a/vllm_omni/model_executor/models/registry.py b/vllm_omni/model_executor/models/registry.py
+index cb516759..ca39d7dd 100644
+--- a/vllm_omni/model_executor/models/registry.py
++++ b/vllm_omni/model_executor/models/registry.py
+@@ -87,6 +87,11 @@ _OMNI_MODELS = {
+         "cosyvoice3",
+         "CosyVoice3Model",
+     ),
++    "ChatterboxMTLV3T3": (
++        "chatterbox_mtl_v3",
++        "chatterbox_mtl_v3",
++        "ChatterboxMTLV3T3",
++    ),
+     "NemotronDenseForCausalLM": (
+         "audex",
+         "audex_thinker",
+diff --git a/vllm_omni/transformers_utils/configs/__init__.py b/vllm_omni/transformers_utils/configs/__init__.py
+index 42d6d8d4..0ccee0f6 100644
+--- a/vllm_omni/transformers_utils/configs/__init__.py
++++ b/vllm_omni/transformers_utils/configs/__init__.py
+@@ -23,6 +23,7 @@ _CLASS_TO_MODULE: dict[str, str] = {
+     "DotsTTSConfig": "vllm_omni.transformers_utils.configs.dots_tts",
+     "VoxtralTTSConfig": "vllm_omni.transformers_utils.configs.voxtral_tts",
+     "CosyVoice3Config": "vllm_omni.transformers_utils.configs.cosyvoice3",
++    "ChatterboxMTLV3Config": "vllm_omni.transformers_utils.configs.chatterbox_mtl_v3",
+     "MiniMaxMusic3Config": "vllm_omni.transformers_utils.configs.minimax_music3",
+     "OmniVoiceConfig": "vllm_omni.transformers_utils.configs.omnivoice",
+     "BailingMoeV2Config": "vllm_omni.transformers_utils.configs.ming_flash_omni",
+@@ -48,6 +49,7 @@ __all__ = [
+     "DotsTTSConfig",
+     "VoxtralTTSConfig",
+     "CosyVoice3Config",
++    "ChatterboxMTLV3Config",
+     "MiniMaxMusic3Config",
+     "OmniVoiceConfig",
+     "BailingMoeV2Config",
+@@ -75,6 +77,7 @@ def __dir__():
+ 
+ # Eagerly import all config modules so their AutoConfig.register() side-effects
+ # run as soon as `vllm_omni.transformers_utils.configs` is imported.
++from vllm_omni.transformers_utils.configs import chatterbox_mtl_v3 as _chatterbox_mtl_v3  # noqa: F401, E402
+ from vllm_omni.transformers_utils.configs import cosyvoice3 as _cosyvoice3  # noqa: F401, E402
+ from vllm_omni.transformers_utils.configs import dots_tts as _dots_tts  # noqa: F401, E402
+ from vllm_omni.transformers_utils.configs import fish_speech as _fish_speech  # noqa: F401, E402

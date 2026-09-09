@@ -1,0 +1,72 @@
+[
+  {
+    "case": "en_plain",
+    "language": "en",
+    "voice": "ex01",
+    "served_seconds": 3.24,
+    "served_cer": 0.0,
+    "served_speaker_similarity": 0.8725,
+    "asr_served": "Hello, this is the reference implementation speaking.",
+    "expected_text": "Hello, this is the reference implementation speaking.",
+    "official_seconds": 3.24,
+    "official_cer": 0.0,
+    "official_speaker_similarity": 0.8766,
+    "asr_official": "Hello, this is the reference implementation speaking."
+  },
+  {
+    "case": "en_long",
+    "language": "en",
+    "voice": "ex01",
+    "served_seconds": 1.08,
+    "served_cer": 0.8827,
+    "served_speaker_similarity": 0.8183,
+    "asr_served": "The quick brown fox.",
+    "expected_text": "The quick brown fox jumps over the lazy dog, and then it turns around and does it again because the sentence needs to be long enough to exercise a real decode loop.",
+    "official_seconds": 8.96,
+    "official_cer": 0.0,
+    "official_speaker_similarity": 0.9206,
+    "asr_official": "The quick brown fox jumps over the lazy dog and then it turns around and does it again because the sentence needs to be long enough to exercise a real decode loop."
+  },
+  {
+    "case": "ar_plain",
+    "language": "ar",
+    "voice": "ex01",
+    "served_seconds": 4.12,
+    "served_cer": 0.0,
+    "served_speaker_similarity": 0.8924,
+    "asr_served": "حياك الله موعدك بكرة الساعة التاسعة صباحا",
+    "expected_text": "حياك الله، موعدك بكرة الساعة التاسعة صباحًا.",
+    "official_seconds": 4.12,
+    "official_cer": 0.0,
+    "official_speaker_similarity": 0.9031,
+    "asr_official": "حياك الله موعدك بكرة الساعة التاسعة صباحا"
+  },
+  {
+    "case": "ar_long",
+    "language": "ar",
+    "voice": "ex02",
+    "served_seconds": 10.4,
+    "served_cer": 0.0,
+    "served_speaker_similarity": 0.896,
+    "asr_served": "أهلاً وسهلاً بك في خدمة العملاء نحن سعداء بتواصلك معنا اليوم وسوف نقوم بمراجعة طلبك والرد عليك في أقرب وقت ممكن",
+    "expected_text": "أهلاً وسهلاً بك في خدمة العملاء، نحن سعداء بتواصلك معنا اليوم، وسوف نقوم بمراجعة طلبك والرد عليك في أقرب وقت ممكن.",
+    "official_seconds": 10.4,
+    "official_cer": 0.0,
+    "official_speaker_similarity": 0.9036,
+    "asr_official": "أهلاً وسهلاً بك في خدمة العملاء نحن سعداء بتواصلك معنا اليوم وسوف نقوم بمراجعة طلبك والرد عليك في أقرب وقت ممكن"
+  },
+  {
+    "case": "mixed_ar_en",
+    "language": "ar",
+    "voice": "ex02",
+    "served_seconds": 4.8,
+    "served_cer": 0.186,
+    "served_speaker_similarity": 0.865,
+    "asr_served": "حياك الله. حسابك على نتفليكس تم تلديده اليوم.",
+    "expected_text": "حياك الله، حسابك على Netflix تم تجديده اليوم.",
+    "official_seconds": 4.8,
+    "official_cer": 0.1628,
+    "official_speaker_similarity": 0.8752,
+    "asr_official": "حياك الله حسابك على نتفليكس تم تجديده اليوم"
+  }
+]

@@ -1,0 +1,272 @@
+{
+  "voice": "ex01",
+  "block_tokens": 25,
+  "pre_lookahead_tokens": 3,
+  "token_mel_ratio": 2,
+  "cases": {
+    "en_plain": {
+      "n_codes": 82,
+      "mel_frames": 164,
+      "chunks": [
+        {
+          "codes_seen": 25,
+          "codes_emitted": 22,
+          "fixed_noise": {
+            "frames": 44,
+            "max_abs": 2.268115,
+            "mean_abs": 0.076938,
+            "pct_of_peak": 21.924
+          },
+          "per_call_noise": {
+            "frames": 44,
+            "max_abs": 2.723169,
+            "mean_abs": 0.319074,
+            "pct_of_peak": 26.323
+          }
+        },
+        {
+          "codes_seen": 50,
+          "codes_emitted": 47,
+          "fixed_noise": {
+            "frames": 94,
+            "max_abs": 3.737487,
+            "mean_abs": 0.12913,
+            "pct_of_peak": 36.128
+          },
+          "per_call_noise": {
+            "frames": 94,
+            "max_abs": 3.434311,
+            "mean_abs": 0.329183,
+            "pct_of_peak": 33.197
+          }
+        },
+        {
+          "codes_seen": 75,
+          "codes_emitted": 72,
+          "fixed_noise": {
+            "frames": 144,
+            "max_abs": 0.56525,
+            "mean_abs": 0.047091,
+            "pct_of_peak": 5.464
+          },
+          "per_call_noise": {
+            "frames": 144,
+            "max_abs": 2.520661,
+            "mean_abs": 0.31376,
+            "pct_of_peak": 24.366
+          }
+        }
+      ],
+      "worst_fixed_noise_pct": 36.128,
+      "worst_per_call_noise_pct": 33.197
+    },
+    "ar_plain": {
+      "n_codes": 104,
+      "mel_frames": 208,
+      "chunks": [
+        {
+          "codes_seen": 25,
+          "codes_emitted": 22,
+          "fixed_noise": {
+            "frames": 44,
+            "max_abs": 0.963799,
+            "mean_abs": 0.103505,
+            "pct_of_peak": 9.506
+          },
+          "per_call_noise": {
+            "frames": 44,
+            "max_abs": 2.058133,
+            "mean_abs": 0.336871,
+            "pct_of_peak": 20.3
+          }
+        },
+        {
+          "codes_seen": 50,
+          "codes_emitted": 47,
+          "fixed_noise": {
+            "frames": 94,
+            "max_abs": 0.501256,
+            "mean_abs": 0.062702,
+            "pct_of_peak": 4.843
+          },
+          "per_call_noise": {
+            "frames": 94,
+            "max_abs": 4.198032,
+            "mean_abs": 0.380958,
+            "pct_of_peak": 40.557
+          }
+        },
+        {
+          "codes_seen": 75,
+          "codes_emitted": 72,
+          "fixed_noise": {
+            "frames": 144,
+            "max_abs": 1.042172,
+            "mean_abs": 0.050076,
+            "pct_of_peak": 10.068
+          },
+          "per_call_noise": {
+            "frames": 144,
+            "max_abs": 2.926723,
+            "mean_abs": 0.349177,
+            "pct_of_peak": 28.275
+          }
+        },
+        {
+          "codes_seen": 100,
+          "codes_emitted": 97,
+          "fixed_noise": {
+            "frames": 194,
+            "max_abs": 2.064404,
+            "mean_abs": 0.029382,
+            "pct_of_peak": 18.293
+          },
+          "per_call_noise": {
+            "frames": 194,
+            "max_abs": 3.073873,
+            "mean_abs": 0.351647,
+            "pct_of_peak": 27.238
+          }
+        }
+      ],
+      "worst_fixed_noise_pct": 18.293,
+      "worst_per_call_noise_pct": 40.557
+    },
+    "en_long": {
+      "n_codes": 225,
+      "mel_frames": 450,
+      "chunks": [
+        {
+          "codes_seen": 25,
+          "codes_emitted": 22,
+          "fixed_noise": {
+            "frames": 44,
+            "max_abs": 0.743218,
+            "mean_abs": 0.107937,
+            "pct_of_peak": 7.296
+          },
+          "per_call_noise": {
+            "frames": 44,
+            "max_abs": 2.786731,
+            "mean_abs": 0.395522,
+            "pct_of_peak": 27.358
+          }
+        },
+        {
+          "codes_seen": 50,
+          "codes_emitted": 47,
+          "fixed_noise": {
+            "frames": 94,
+            "max_abs": 3.094049,
+            "mean_abs": 0.108985,
+            "pct_of_peak": 30.375
+          },
+          "per_call_noise": {
+            "frames": 94,
+            "max_abs": 4.235358,
+            "mean_abs": 0.452562,
+            "pct_of_peak": 41.58
+          }
+        },
+        {
+          "codes_seen": 75,
+          "codes_emitted": 72,
+          "fixed_noise": {
+            "frames": 144,
+            "max_abs": 2.135913,
+            "mean_abs": 0.128285,
+            "pct_of_peak": 20.969
+          },
+          "per_call_noise": {
+            "frames": 144,
+            "max_abs": 4.940207,
+            "mean_abs": 0.401671,
+            "pct_of_peak": 48.499
+          }
+        },
+        {
+          "codes_seen": 100,
+          "codes_emitted": 97,
+          "fixed_noise": {
+            "frames": 194,
+            "max_abs": 0.836458,
+            "mean_abs": 0.068264,
+            "pct_of_peak": 8.212
+          },
+          "per_call_noise": {
+            "frames": 194,
+            "max_abs": 4.108185,
+            "mean_abs": 0.403062,
+            "pct_of_peak": 40.331
+          }
+        },
+        {
+          "codes_seen": 125,
+          "codes_emitted": 122,
+          "fixed_noise": {
+            "frames": 244,
+            "max_abs": 1.831361,
+            "mean_abs": 0.067552,
+            "pct_of_peak": 17.979
+          },
+          "per_call_noise": {
+            "frames": 244,
+            "max_abs": 3.099962,
+            "mean_abs": 0.366946,
+            "pct_of_peak": 30.433
+          }
+        },
+        {
+          "codes_seen": 150,
+          "codes_emitted": 147,
+          "fixed_noise": {
+            "frames": 294,
+            "max_abs": 0.858032,
+            "mean_abs": 0.043657,
+            "pct_of_peak": 8.424
+          },
+          "per_call_noise": {
+            "frames": 294,
+            "max_abs": 4.265023,
+            "mean_abs": 0.416638,
+            "pct_of_peak": 41.871
+          }
+        },
+        {
+          "codes_seen": 175,
+          "codes_emitted": 172,
+          "fixed_noise": {
+            "frames": 344,
+            "max_abs": 2.377915,
+            "mean_abs": 0.050798,
+            "pct_of_peak": 23.345
+          },
+          "per_call_noise": {
+            "frames": 344,
+            "max_abs": 3.686173,
+            "mean_abs": 0.375957,
+            "pct_of_peak": 36.188
+          }
+        },
+        {
+          "codes_seen": 200,
+          "codes_emitted": 197,
+          "fixed_noise": {
+            "frames": 394,
+            "max_abs": 0.613553,
+            "mean_abs": 0.037824,
+            "pct_of_peak": 6.023
+          },
+          "per_call_noise": {
+            "frames": 394,
+            "max_abs": 3.918912,
+            "mean_abs": 0.373969,
+            "pct_of_peak": 38.473
+          }
+        }
+      ],
+      "worst_fixed_noise_pct": 30.375,
+      "worst_per_call_noise_pct": 48.499
+    }
+  }
+}

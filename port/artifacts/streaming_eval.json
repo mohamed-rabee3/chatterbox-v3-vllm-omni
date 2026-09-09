@@ -1,0 +1,83 @@
+{
+  "voice": "ex01",
+  "block_tokens": 25,
+  "growth": 2.0,
+  "crossfade_ms": 10.0,
+  "cases": {
+    "en_plain": {
+      "n_codes": 82,
+      "oneshot_samples": 77760,
+      "streamed_samples": 77760,
+      "length_delta_samples": 0,
+      "seam_streamed": {
+        "max_jump": 0.163322,
+        "p9999_jump": 0.136615,
+        "ratio": 1.2
+      },
+      "seam_oneshot": {
+        "max_jump": 0.15401,
+        "p9999_jump": 0.130533,
+        "ratio": 1.18
+      },
+      "chunks": 5,
+      "tokens_decoded": 157,
+      "cost_multiplier": 1.91,
+      "first_audio_after_codes": 25,
+      "ttfa_codes_fraction": 0.305,
+      "streamed_cer": 0.0,
+      "streamed_speaker_similarity": 0.8738,
+      "oneshot_cer": 0.0,
+      "oneshot_speaker_similarity": 0.8787
+    },
+    "ar_plain": {
+      "n_codes": 104,
+      "oneshot_samples": 98880,
+      "streamed_samples": 98880,
+      "length_delta_samples": 0,
+      "seam_streamed": {
+        "max_jump": 0.1424,
+        "p9999_jump": 0.121523,
+        "ratio": 1.17
+      },
+      "seam_oneshot": {
+        "max_jump": 0.169777,
+        "p9999_jump": 0.127424,
+        "ratio": 1.33
+      },
+      "chunks": 7,
+      "tokens_decoded": 279,
+      "cost_multiplier": 2.68,
+      "first_audio_after_codes": 25,
+      "ttfa_codes_fraction": 0.24,
+      "streamed_cer": 0.0244,
+      "streamed_speaker_similarity": 0.9159,
+      "oneshot_cer": 0.0244,
+      "oneshot_speaker_similarity": 0.9152
+    },
+    "en_long": {
+      "n_codes": 225,
+      "oneshot_samples": 215040,
+      "streamed_samples": 215040,
+      "length_delta_samples": 0,
+      "seam_streamed": {
+        "max_jump": 0.215726,
+        "p9999_jump": 0.135825,
+        "ratio": 1.59
+      },
+      "seam_oneshot": {
+        "max_jump": 0.208038,
+        "p9999_jump": 0.135035,
+        "ratio": 1.54
+      },
+      "chunks": 9,
+      "tokens_decoded": 600,
+      "cost_multiplier": 2.67,
+      "first_audio_after_codes": 25,
+      "ttfa_codes_fraction": 0.111,
+      "streamed_cer": 0.0,
+      "streamed_speaker_similarity": 0.9217,
+      "oneshot_cer": 0.0,
+      "oneshot_speaker_similarity": 0.9161
+    }
+  }
+}
